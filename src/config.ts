@@ -8,7 +8,7 @@ export const VIEWPORT_H = GAME_HEIGHT - UI_HEIGHT;
 
 export const ENCOUNTER_RATE = 0.04; // 4% per step on field tiles
 export const MAX_PARTY = 4;
-export const SERVER_URL = '';       // empty = same origin (Vite proxy)
+export const SERVER_URL = 'https://dqhuu-take2.onrender.com';
 
 export const COLORS = {
   SKY:        0x0a0a1a,
