@@ -56,6 +56,8 @@ export interface CharacterSave {
   gold: number;
   position: { mapId: MapId; tileX: number; tileY: number };
   flags: Record<string, boolean>;
+  party: PartyMember[];
+  activeMemberIds: string[];
 }
 
 export interface EnemyDef {
@@ -119,6 +121,17 @@ export interface BattleRoundResult {
   victory: boolean;
 }
 
+export interface PartyMember {
+  id: string;
+  name: string;
+  className: ClassName;
+  level: number;
+  exp: number;
+  stats: Stats;
+  equipment: Equipment;
+  spriteColor: number;
+}
+
 export interface NpcDef {
   id: string;
   name: string;
@@ -126,6 +139,7 @@ export interface NpcDef {
   tileX: number;
   tileY: number;
   spriteColor: number;
+  recruitId?: string;
 }
 
 export interface MapDef {

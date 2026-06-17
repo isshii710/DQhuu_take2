@@ -1,5 +1,5 @@
-import type { CharacterSave, EnemyDef, Stats } from '../types';
-import { getClassDef, calcStats, expForLevel } from '../data/characters';
+import type { CharacterSave, EnemyDef, PartyMember } from '../types';
+import { getClassDef, expForLevel } from '../data/characters';
 import { getItem } from '../data/items';
 
 export interface Combatant {
@@ -47,6 +47,23 @@ export function buildCombatant(save: CharacterSave): Combatant {
     def: save.stats.def,
     mag: save.stats.mag,
     spd: save.stats.spd,
+    isEnemy: false,
+    statusEffects: new Set(),
+  };
+}
+
+export function buildPartyMemberCombatant(member: PartyMember, index: number): Combatant {
+  return {
+    id: `party_${member.id}`,
+    name: member.name,
+    hp: member.stats.hp,
+    maxHp: member.stats.maxHp,
+    mp: member.stats.mp,
+    maxMp: member.stats.maxMp,
+    atk: member.stats.atk,
+    def: member.stats.def,
+    mag: member.stats.mag,
+    spd: member.stats.spd,
     isEnemy: false,
     statusEffects: new Set(),
   };

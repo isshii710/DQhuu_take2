@@ -33,6 +33,8 @@ export function defaultSave(name: string, className: CharacterSave['className'])
     gold: 50,
     position: { mapId: 'village', tileX: 9, tileY: 13 },
     flags: {},
+    party: [],
+    activeMemberIds: [],
   };
 }
 
@@ -44,7 +46,11 @@ export function loadSave(): CharacterSave | null {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as CharacterSave;
+    const save = JSON.parse(raw) as CharacterSave;
+    // 後方互換: partyフィールドが存在しない古いセーブデータへの対応
+    if (!Array.isArray(save.party)) save.party = [];
+    if (!Array.isArray(save.activeMemberIds)) save.activeMemberIds = [];
+    return save;
   } catch {
     return null;
   }

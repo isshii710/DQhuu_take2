@@ -163,6 +163,9 @@ export const MAP_DEFS: MapDef[] = [
         ],
         tileX: 15, tileY: 10, spriteColor: 0xFFAAAA,
       },
+      { id: 'npc_aria', name: 'アリア', dialogue: ['みんなのHPを回復します！'], tileX: 7, tileY: 6, spriteColor: 0xFF88CC, recruitId: 'aria' },
+      { id: 'npc_galen', name: 'ガレン', dialogue: ['俺が守ってやる！'], tileX: 13, tileY: 7, spriteColor: 0xFFAA44, recruitId: 'galen' },
+      { id: 'npc_elda', name: 'エルダ', dialogue: ['光の加護がありますように。'], tileX: 7, tileY: 10, spriteColor: 0xFFFFAA, recruitId: 'elda' },
     ],
     exits: [
       { tileX: 9,  tileY: 14, targetMap: 'world', targetX: 2, targetY: 3 },
@@ -195,6 +198,10 @@ export const MAP_DEFS: MapDef[] = [
         dialogue: ['この城には王国の宝が眠っている。いつか探してみよ。'],
         tileX: 13, tileY: 6, spriteColor: 0xAABBCC,
       },
+      { id: 'npc_luna', name: 'ルナ', dialogue: ['魔法の力を使います！'], tileX: 3, tileY: 2, spriteColor: 0x8888FF, recruitId: 'luna' },
+      { id: 'npc_balt', name: 'バルト', dialogue: ['合格だ。一緒に行ってやる。'], tileX: 15, tileY: 2, spriteColor: 0xFF5555, recruitId: 'balt' },
+      { id: 'npc_shena', name: 'シェナ', dialogue: ['星の導きにより…'], tileX: 9, tileY: 5, spriteColor: 0xFF44FF, recruitId: 'shena' },
+      { id: 'npc_rai', name: 'ライ', dialogue: ['生き残ろうぜ。'], tileX: 3, tileY: 12, spriteColor: 0x44CCFF, recruitId: 'rai' },
     ],
     exits: [
       { tileX: 9,  tileY: 14, targetMap: 'world', targetX: 35, targetY: 3 },
@@ -217,6 +224,7 @@ export const MAP_DEFS: MapDef[] = [
         ],
         tileX: 3, tileY: 5, spriteColor: 0xFF8888,
       },
+      { id: 'npc_zain', name: 'ゼイン', dialogue: ['罠には気をつけろ。'], tileX: 15, tileY: 5, spriteColor: 0x44FFAA, recruitId: 'zain' },
     ],
     exits: [
       { tileX: 9,  tileY: 14, targetMap: 'world', targetX: 19, targetY: 18 },
