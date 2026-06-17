@@ -27,7 +27,7 @@ export class SceneManager {
       save,
       opts,
       battleOpts => this.startBattle(battleOpts),
-      (s, onClose) => this.menuScreen.open(s, onClose)
+      (s, onClose, onFieldAction) => this.menuScreen.open(s, onClose, onFieldAction)
     );
   }
 
@@ -36,7 +36,7 @@ export class SceneManager {
     this.battleScreen.start(
       battleOpts.save,
       battleOpts.enemies,
-      { isMultiplayer: battleOpts.isMultiplayer, isHost: battleOpts.isHost, returnMap: battleOpts.returnMap },
+      { isMultiplayer: battleOpts.isMultiplayer, isHost: battleOpts.isHost, returnMap: battleOpts.returnMap, onDefeat: battleOpts.onDefeat },
       (updatedSave, mapId) => this.endBattle(updatedSave, mapId as MapId, battleOpts)
     );
   }
@@ -44,6 +44,9 @@ export class SceneManager {
   private endBattle(save: CharacterSave, mapId: MapId, battleOpts: BattleOpts) {
     this.battleScreen.hide();
     save.position.mapId = mapId;
+    // Update monster book: count victory if player survived
+    const victory = save.stats.hp > 0;
+    this.worldScreen.updateMonsterBook(battleOpts.enemies, victory);
     this.startWorld(save, {
       isMultiplayer: battleOpts.isMultiplayer,
       isHost: battleOpts.isHost,

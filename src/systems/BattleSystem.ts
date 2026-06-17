@@ -88,9 +88,13 @@ export function buildEnemyCombatant(e: EnemyDef, index: number): Combatant {
 
 export function resolveAction(actor: Combatant, action: BattleAction, target: Combatant): ActionResult {
   if (action.type === 'attack') {
+    // If attacker is blind, 40% chance to miss
+    if (actor.statusEffects.has('blind') && Math.random() < 0.4) {
+      return { actorId: actor.id, targetId: target.id, type: 'attack', missed: true, text: `${actor.name}の攻撃！ しかし外れた！` };
+    }
     const variance = 0.9 + Math.random() * 0.2;
     const atkMult = actor.statusEffects.has('atk_up') ? 1.5 : 1.0;
-    const defMult = target.statusEffects.has('def_up') ? 0.6 : 1.0;
+    const defMult = target.statusEffects.has('def_up2') ? 0.4 : target.statusEffects.has('def_up') ? 0.6 : 1.0;
     const spdPenalty = target.statusEffects.has('slow') ? 0.85 : 1.0;
     const dmg = Math.max(1, Math.floor((actor.atk * atkMult - target.def * 0.5 * defMult) * variance * spdPenalty));
     target.hp = Math.max(0, target.hp - dmg);
@@ -118,10 +122,38 @@ export function resolveAction(actor: Combatant, action: BattleAction, target: Co
       return { actorId: actor.id, targetId: target.id, type: 'magic_buff', text: `${actor.name}はバリアを唱えた！${target.name}の防御力が上がった！` };
     }
 
+    // Buff: スカラ → target gains def_up2 (stronger defense)
+    if (action.spellName === 'スカラ') {
+      target.statusEffects.add('def_up2');
+      return { actorId: actor.id, targetId: target.id, type: 'magic_buff', text: `${actor.name}はスカラを唱えた！${target.name}の守備力が大幅に上がった！` };
+    }
+
     // Debuff: スロウ → target gains slow
     if (action.spellName === 'スロウ') {
       target.statusEffects.add('slow');
       return { actorId: actor.id, targetId: target.id, type: 'magic_debuff', text: `${actor.name}はスロウを唱えた！${target.name}の素早さが下がった！` };
+    }
+
+    // Debuff: マヌーサ → target gains blind
+    if (action.spellName === 'マヌーサ') {
+      target.statusEffects.add('blind');
+      return { actorId: actor.id, targetId: target.id, type: 'magic_debuff', text: `${actor.name}はマヌーサを唱えた！${target.name}は幻惑された！` };
+    }
+
+    // Debuff: ラリホー → 70% chance sleep
+    if (action.spellName === 'ラリホー') {
+      if (Math.random() < 0.7) {
+        target.statusEffects.add('sleep');
+        return { actorId: actor.id, targetId: target.id, type: 'magic_debuff', text: `${actor.name}はラリホーを唱えた！${target.name}は眠りについた…` };
+      } else {
+        return { actorId: actor.id, targetId: target.id, type: 'magic_debuff', text: `${actor.name}はラリホーを唱えた！しかし${target.name}には効かなかった` };
+      }
+    }
+
+    // Debuff: 煙幕 → target gains confuse
+    if (action.spellName === '煙幕') {
+      target.statusEffects.add('confuse');
+      return { actorId: actor.id, targetId: target.id, type: 'magic_debuff', text: `${actor.name}は煙幕を張った！${target.name}は混乱した！` };
     }
 
     // Debuff: 毒針 → target gains poison (handled per-turn elsewhere)
@@ -130,6 +162,13 @@ export function resolveAction(actor: Combatant, action: BattleAction, target: Co
       const dmg = Math.max(1, Math.floor(actor.mag * s.magMult * (0.9 + Math.random() * 0.2)));
       target.hp = Math.max(0, target.hp - dmg);
       return { actorId: actor.id, targetId: target.id, type: 'magic_debuff', damage: dmg, text: `${actor.name}は毒針を放った！${target.name}に${dmg}ダメージ＋毒！` };
+    }
+
+    // ベホマ: fully restore HP
+    if (action.spellName === 'ベホマ') {
+      const healed = target.maxHp - target.hp;
+      target.hp = target.maxHp;
+      return { actorId: actor.id, targetId: target.id, type: 'magic_heal', heal: healed, text: `${actor.name}はベホマを唱えた！${target.name}のHPが完全回復した！` };
     }
 
     // Healing spells
@@ -165,6 +204,34 @@ export function resolveAction(actor: Combatant, action: BattleAction, target: Co
   }
 
   return { actorId: actor.id, type: 'skip', text: '' };
+}
+
+export function applyTurnStartEffects(combatant: Combatant): { skip: boolean; text: string; damage?: number } {
+  // Poison: 15 damage each turn
+  if (combatant.statusEffects.has('poison')) {
+    const dmg = 15;
+    combatant.hp = Math.max(0, combatant.hp - dmg);
+    return { skip: false, text: `${combatant.name}は毒で${dmg}ダメージを受けた！`, damage: dmg };
+  }
+  // Sleep: 50% chance to wake up
+  if (combatant.statusEffects.has('sleep')) {
+    if (Math.random() < 0.5) {
+      combatant.statusEffects.delete('sleep');
+      return { skip: false, text: `${combatant.name}は目覚めた！` };
+    }
+    return { skip: true, text: `${combatant.name}は眠っている…` };
+  }
+  // Paralysis: 40% chance to skip
+  if (combatant.statusEffects.has('paralysis')) {
+    if (Math.random() < 0.4) {
+      return { skip: true, text: `${combatant.name}は体が動かない！` };
+    }
+  }
+  return { skip: false, text: '' };
+}
+
+export function isAllDefeated(combatants: Combatant[]): boolean {
+  return combatants.every(c => c.hp <= 0);
 }
 
 export function enemyAI(enemy: Combatant, players: Combatant[]): BattleAction {

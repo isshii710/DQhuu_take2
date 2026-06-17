@@ -40,7 +40,7 @@ const MAP_FLAGS: Partial<Record<MapId, string>> = {
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
 const MOVE_DURATION = 250; // ms per tile move
 
-export interface BattleOpts { save: CharacterSave; enemies: EnemyDef[]; isMultiplayer: boolean; isHost: boolean; returnMap: MapId; }
+export interface BattleOpts { save: CharacterSave; enemies: EnemyDef[]; isMultiplayer: boolean; isHost: boolean; returnMap: MapId; onDefeat?: () => void; }
 
 export class WorldScreen {
   private uiRoot: HTMLElement;
@@ -98,7 +98,7 @@ export class WorldScreen {
   private mapTransitionCooldown = 0; // ms — prevents re-entering exit immediately after map change
 
   private onBattle!: (opts: BattleOpts) => void;
-  private onMenu!:   (save: CharacterSave, onClose: (s: CharacterSave)=>void) => void;
+  private onMenu!:   (save: CharacterSave, onClose: (s: CharacterSave)=>void, onFieldAction?: (action: string) => void) => void;
 
   private active = false;
   private lastTime = 0;
@@ -200,7 +200,7 @@ export class WorldScreen {
     save: CharacterSave,
     opts: { isMultiplayer: boolean; isHost?: boolean; fromBattle?: boolean },
     onBattle: (o: BattleOpts)=>void,
-    onMenu:   (s: CharacterSave, onClose: (s:CharacterSave)=>void)=>void
+    onMenu:   (s: CharacterSave, onClose: (s:CharacterSave)=>void, onFieldAction?: (action: string) => void)=>void
   ) {
     this.save = save;
     this.mapId = save.position.mapId;
@@ -416,6 +416,10 @@ export class WorldScreen {
         this.showChestDialog(npc);
       } else if (npc.isInn) {
         this.showInnDialog();
+      } else if (npc.isChurch) {
+        this.showChurchDialog();
+      } else if (npc.id === 'medal_master') {
+        this.showMedalMasterDialog();
       } else if (npc.shopType) {
         this.showShopDialog(npc);
       } else if (npc.id === 'boss_grosur') {
@@ -533,7 +537,7 @@ export class WorldScreen {
     requestAnimationFrame(() => { flash.style.opacity = '1'; });
 
     setTimeout(() => {
-      this.onBattle({ save: this.save, enemies: battleEnemies, isMultiplayer: this.isMultiplayer, isHost: this.isHost, returnMap: this.mapId });
+      this.onBattle({ save: this.save, enemies: battleEnemies, isMultiplayer: this.isMultiplayer, isHost: this.isHost, returnMap: this.mapId, onDefeat: () => this.handleDefeat() });
       flash.style.transition = 'opacity 0.22s ease-out';
       flash.style.opacity = '0';
       setTimeout(() => flash.remove(), 280);
@@ -858,6 +862,14 @@ export class WorldScreen {
         this.showChestDialog(npc);
         return;
       }
+      if (npc.isChurch) {
+        this.showChurchDialog();
+        return;
+      }
+      if (npc.id === 'medal_master') {
+        this.showMedalMasterDialog();
+        return;
+      }
       if (npc.shopType) {
         this.showShopDialog(npc);
         return;
@@ -895,6 +907,9 @@ export class WorldScreen {
     this.onMenu(this.save, (s) => {
       this.save = s;
       this.hudEl.update(s, getMapDef(this.mapId).name);
+    }, (action: string) => {
+      if (action === 'rula') this.showRulaDialog();
+      else if (action === 'releimito') this.showReleimitoDialog();
     });
   }
 
@@ -1444,6 +1459,7 @@ export class WorldScreen {
         isMultiplayer: true,
         isHost: this.isHost,
         returnMap: this.mapId,
+        onDefeat: () => this.handleDefeat(),
       });
     });
   }
@@ -1454,5 +1470,207 @@ export class WorldScreen {
     const sprite = this.renderer.addOtherPlayer(data.id, ci >= 0 ? ci : 0, data.x, data.y);
     if (!sprite) return;
     this.otherPlayers.set(data.id, { sprite, data });
+  }
+
+  // ─── 全滅ペナルティ ────────────────────────────────────────────────────────
+
+  private handleDefeat() {
+    // Halve gold (classic DQ death penalty)
+    this.save.gold = Math.floor(this.save.gold / 2);
+    // Restore 1 HP to all party members
+    this.save.stats.hp = 1;
+    for (const m of this.save.party) m.stats.hp = 1;
+    writeSave(this.save);
+    // Re-activate world screen (was deactivated when battle started)
+    this.active = true;
+    this.uiRoot.style.display = 'block';
+    this.hudEl.show();
+    this.moving = false;
+    this.dialogOpen = false;
+    this.dialogEl.style.display = 'none';
+    this.lastTime = performance.now();
+    this.loop(this.lastTime);
+    this.changeMap('village', 9, 11);
+    setTimeout(() => {
+      this.showDialogue('システム', ['全滅してしまった…', 'ゴールドが半分になってしまった…', 'ハジメ村に戻されました。']);
+    }, 300);
+  }
+
+  // ─── ルーラ (ワープ) ─────────────────────────────────────────────────────
+
+  showRulaDialog() {
+    if (this.dialogOpen) return;
+    this.dialogOpen = true;
+
+    const destinations = [
+      { mapId: 'village' as MapId, name: 'ハジメ村', flag: 'village_visited', x: 9, y: 11 },
+      { mapId: 'castle' as MapId, name: 'アルデア城', flag: 'castle_visited', x: 9, y: 11 },
+    ].filter(d => this.save.flags[d.flag]);
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);pointer-events:auto;z-index:20;`;
+
+    const box = document.createElement('div');
+    box.style.cssText = `background:rgba(10,10,30,0.97);border:2px solid rgba(212,175,55,0.7);border-radius:8px;padding:20px 22px;width:260px;font-family:${FONT};`;
+
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#FFD700;font-size:14px;margin-bottom:12px;text-align:center;';
+    title.textContent = '✨ ルーラ — どこへ行く？';
+    box.appendChild(title);
+
+    const close = () => { overlay.remove(); this.dialogOpen = false; };
+
+    if (destinations.length === 0) {
+      const msg = document.createElement('div');
+      msg.style.cssText = `color:#AAAACC;font-size:13px;text-align:center;margin-bottom:12px;font-family:${FONT};`;
+      msg.textContent = '訪れた場所がない';
+      box.appendChild(msg);
+    } else {
+      destinations.forEach(dest => {
+        const btn = document.createElement('button');
+        btn.style.cssText = `display:block;width:100%;padding:10px 0;margin-bottom:8px;background:rgba(16,26,56,0.9);color:#FFFDE7;border:1px solid rgba(212,175,55,0.5);border-radius:4px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+        btn.textContent = dest.name;
+        btn.addEventListener('click', () => {
+          close();
+          this.changeMap(dest.mapId, dest.x, dest.y);
+        });
+        box.appendChild(btn);
+      });
+    }
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.style.cssText = `display:block;width:100%;padding:8px 0;background:rgba(16,16,28,0.9);color:#888899;border:1px solid rgba(51,68,102,0.5);border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    cancelBtn.textContent = 'やめる';
+    cancelBtn.addEventListener('click', close);
+    box.appendChild(cancelBtn);
+    overlay.appendChild(box);
+    this.uiRoot.appendChild(overlay);
+  }
+
+  // ─── リレミト (ダンジョン脱出) ───────────────────────────────────────────
+
+  showReleimitoDialog() {
+    const isDungeon = this.mapId === 'dungeon' || this.mapId === 'dungeon2' || this.mapId === 'dungeon3';
+    if (!isDungeon) {
+      this.showDialogue('システム', ['ここでは使えない。']);
+      return;
+    }
+    if (this.dialogOpen) return;
+    this.dialogOpen = true;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);pointer-events:auto;z-index:20;`;
+
+    const box = document.createElement('div');
+    box.style.cssText = `background:rgba(10,10,30,0.97);border:2px solid rgba(212,175,55,0.7);border-radius:8px;padding:20px 22px;width:260px;font-family:${FONT};`;
+
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#FFD700;font-size:14px;margin-bottom:12px;text-align:center;';
+    title.textContent = '⬆ リレミト — 洞窟から脱出する？';
+    box.appendChild(title);
+
+    const close = () => { overlay.remove(); this.dialogOpen = false; };
+
+    const yesBtn = document.createElement('button');
+    yesBtn.style.cssText = `display:block;width:100%;padding:10px 0;margin-bottom:8px;background:rgba(10,30,10,0.9);color:#AAFFAA;border:1px solid rgba(68,187,68,0.5);border-radius:4px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    yesBtn.textContent = 'はい';
+    yesBtn.addEventListener('click', () => {
+      close();
+      this.changeMap('world', 19, 18);
+    });
+    box.appendChild(yesBtn);
+
+    const noBtn = document.createElement('button');
+    noBtn.style.cssText = `display:block;width:100%;padding:8px 0;background:rgba(16,16,28,0.9);color:#888899;border:1px solid rgba(51,68,102,0.5);border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    noBtn.textContent = 'いいえ';
+    noBtn.addEventListener('click', close);
+    box.appendChild(noBtn);
+    overlay.appendChild(box);
+    this.uiRoot.appendChild(overlay);
+  }
+
+  // ─── 教会ダイアログ ───────────────────────────────────────────────────────
+
+  private showChurchDialog() {
+    if (this.dialogOpen) return;
+    this.dialogOpen = true;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.55);pointer-events:auto;z-index:20;`;
+
+    const box = document.createElement('div');
+    box.style.cssText = `background:rgba(10,10,30,0.97);border:2px solid rgba(212,175,55,0.7);border-radius:8px;padding:20px 22px;width:270px;font-family:${FONT};`;
+
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#FFD700;font-size:14px;margin-bottom:6px;';
+    title.textContent = '神父';
+    const msg = document.createElement('div');
+    msg.style.cssText = 'color:#FFFDE7;font-size:13px;margin-bottom:16px;line-height:1.5;';
+    msg.textContent = '神の祝福を。\n何をご希望ですか？';
+    box.appendChild(title);
+    box.appendChild(msg);
+
+    const btnStyle = (c = '#FFFDE7', bg = 'rgba(26,26,46,0.9)') => `display:block;width:100%;padding:10px 0;margin-bottom:8px;background:${bg};color:${c};border:1px solid rgba(212,175,55,0.5);border-radius:4px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    const close = () => { overlay.remove(); this.dialogOpen = false; };
+
+    // 祈る: restore all HP/MP for free
+    const prayBtn = document.createElement('button');
+    prayBtn.style.cssText = btnStyle('#AAFFAA', 'rgba(10,30,10,0.9)');
+    prayBtn.textContent = '祈る（無料でHP/MP全回復）';
+    prayBtn.addEventListener('click', () => {
+      this.save.stats.hp = this.save.stats.maxHp;
+      this.save.stats.mp = this.save.stats.maxMp;
+      for (const m of this.save.party) { m.stats.hp = m.stats.maxHp; m.stats.mp = m.stats.maxMp; }
+      writeSave(this.save);
+      this.hudEl.update(this.save, getMapDef(this.mapId).name);
+      close();
+      this.showDialogue('神父', ['神の御加護があなたに。', 'HPとMPが全回復しました！']);
+    });
+    box.appendChild(prayBtn);
+
+    // 呪いを解く: cure all status effects, 100G
+    const curseBtn = document.createElement('button');
+    curseBtn.style.cssText = btnStyle('#AADDFF', 'rgba(10,10,30,0.9)');
+    curseBtn.textContent = `呪いを解く（100G）`;
+    curseBtn.addEventListener('click', () => {
+      if (this.save.gold < 100) { close(); this.showDialogue('神父', ['ゴールドが足りません。']); return; }
+      this.save.gold -= 100;
+      writeSave(this.save);
+      this.hudEl.update(this.save, getMapDef(this.mapId).name);
+      close();
+      this.showDialogue('神父', ['全ての呪いを解きました！']);
+    });
+    box.appendChild(curseBtn);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.style.cssText = btnStyle('#888899', 'rgba(16,16,28,0.9)');
+    cancelBtn.textContent = '帰る';
+    cancelBtn.addEventListener('click', close);
+    box.appendChild(cancelBtn);
+    overlay.appendChild(box);
+    this.uiRoot.appendChild(overlay);
+  }
+
+  // ─── モンスター図鑑 ──────────────────────────────────────────────────────
+
+  updateMonsterBook(enemies: EnemyDef[], defeated: boolean) {
+    if (!this.save.monsterBook) this.save.monsterBook = {};
+    for (const e of enemies) {
+      if (!this.save.monsterBook[e.id]) this.save.monsterBook[e.id] = { seen: 0, defeated: 0 };
+      this.save.monsterBook[e.id].seen++;
+      if (defeated) this.save.monsterBook[e.id].defeated++;
+    }
+  }
+
+  // ─── メダル親父 ──────────────────────────────────────────────────────────
+
+  private showMedalMasterDialog() {
+    const medals = this.save.medals ?? 0;
+    if (this.dialogOpen) return;
+    const lines: string[] = [`現在のメダル数: ${medals}枚`];
+    if (medals >= 20) lines.push('10枚で聖水、20枚でエリクサーと交換できます。20枚あります！');
+    else if (medals >= 10) lines.push('10枚で聖水と交換できます！');
+    else lines.push('10枚で聖水、20枚でエリクサーと交換してやろう。');
+    this.showDialogue('メダル親父', lines);
   }
 }
