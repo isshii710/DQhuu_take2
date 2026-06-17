@@ -27,10 +27,12 @@ export class VirtualJoystick {
     this.root.style.cssText = `
       position: absolute;
       bottom: 0; left: 0;
-      width: 50%; height: 100px;
+      width: 100%; height: 100%;
       pointer-events: auto;
-      display: flex; align-items: center; justify-content: flex-start;
-      padding-left: 28px;
+      display: flex; align-items: flex-end; justify-content: flex-start;
+      padding-left: 20px;
+      padding-bottom: 28px;
+      box-sizing: border-box;
     `;
 
     this.outer = document.createElement('div');
@@ -98,9 +100,18 @@ export class VirtualJoystick {
       this.setDir(null);
       return;
     }
-    const newDir: Direction = Math.abs(dx) > Math.abs(dy)
-      ? (dx > 0 ? 'right' : 'left')
-      : (dy > 0 ? 'down' : 'up');
+    // 8-way: use angle sectors of 45° each
+    const angle = Math.atan2(dy, dx) * 180 / Math.PI; // 0=right,90=down
+    const a = ((angle % 360) + 360) % 360;
+    let newDir: Direction;
+    if      (a >= 337.5 || a < 22.5)  newDir = 'right';
+    else if (a < 67.5)                 newDir = 'down-right';
+    else if (a < 112.5)                newDir = 'down';
+    else if (a < 157.5)                newDir = 'down-left';
+    else if (a < 202.5)                newDir = 'left';
+    else if (a < 247.5)                newDir = 'up-left';
+    else if (a < 292.5)                newDir = 'up';
+    else                               newDir = 'up-right';
     this.setDir(newDir);
   }
 
