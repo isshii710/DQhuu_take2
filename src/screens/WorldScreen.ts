@@ -36,7 +36,7 @@ const MAP_FLAGS: Partial<Record<MapId, string>> = {
 };
 
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
-const MOVE_DURATION = 200; // ms per tile move
+const MOVE_DURATION = 250; // ms per tile move
 
 export interface BattleOpts { save: CharacterSave; enemies: EnemyDef[]; isMultiplayer: boolean; isHost: boolean; returnMap: MapId; }
 
@@ -93,6 +93,7 @@ export class WorldScreen {
   private shopLabels: Array<{ el: HTMLElement; worldX: number; worldZ: number }> = [];
   private exitLabels: Array<{ el: HTMLElement; worldX: number; worldZ: number }> = [];
   private exitLabelT = 0;
+  private mapTransitionCooldown = 0; // ms — prevents re-entering exit immediately after map change
 
   private onBattle!: (opts: BattleOpts) => void;
   private onMenu!:   (save: CharacterSave, onClose: (s: CharacterSave)=>void) => void;
@@ -280,6 +281,8 @@ export class WorldScreen {
   };
 
   private update(delta: number) {
+    if (this.mapTransitionCooldown > 0) this.mapTransitionCooldown = Math.max(0, this.mapTransitionCooldown - delta);
+
     // Per-enemy individual movement timers + smooth visual interpolation
     let anyMoved = false;
     for (const fe of this.fieldEnemies) {
@@ -399,9 +402,9 @@ export class WorldScreen {
     const tileId = tiles[ny][nx];
     if (!WALKABLE.has(tileId)) return;
 
-    // Check exit
+    // Check exit (guarded by cooldown to prevent flickering on map entry)
     const exit = mapDef.exits.find(e=>e.tileX===nx&&e.tileY===ny);
-    if (exit) { this.changeMap(exit.targetMap, exit.targetX, exit.targetY); return; }
+    if (exit && this.mapTransitionCooldown <= 0) { this.changeMap(exit.targetMap, exit.targetX, exit.targetY); return; }
 
     // Check NPC
     const npc = mapDef.npcs.find(n=>n.tileX===nx&&n.tileY===ny);
@@ -459,6 +462,7 @@ export class WorldScreen {
     this.fieldEnemies = []; // renderer.loadMap() will clear sprites
     this.save.position = { mapId: targetMap, tileX: targetX, tileY: targetY };
     this.mapId = targetMap;
+    this.mapTransitionCooldown = 600; // prevent immediate re-exit after transition
 
     // マップ訪問フラグを設定
     const mapFlag = MAP_FLAGS[targetMap];

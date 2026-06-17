@@ -99,22 +99,23 @@ const CASTLE_TILES: number[][] = [
   [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
 ];
 
-// 20×16 dungeon
+// 20×16 dungeon — fully connected, no dead ends
+// Main corridors at rows 1, 3, 7, 11, 13; boss at (9,1)
 const DUNGEON_TILES: number[][] = [
   [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
-  [Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl],
-  [Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl],
-  [Wl,Fl,Wl,Fl,Fl,Fl,Wl,Fl,Wl,Wl,Wl,Wl,Fl,Wl,Fl,Fl,Fl,Wl,Fl,Wl],
-  [Wl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Wl],
-  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
-  [Wl,Wl,Wl,Wl,Fl,Wl,Wl,Fl,Wl,Fl,Fl,Wl,Fl,Wl,Wl,Fl,Wl,Wl,Wl,Wl],
-  [Wl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Fl,Fl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Wl],
-  [Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl],
-  [Wl,Fl,Fl,Fl,Wl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Wl,Fl,Fl,Fl,Wl],
-  [Wl,Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Wl,Wl],
-  [Wl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
-  [Wl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl,Fl,Fl,Wl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Wl],
-  [Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Fl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Fl,Fl,Wl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Fl,Wl,Wl,Fl,Wl,Wl,Fl,Wl,Wl,Fl,Wl,Wl,Fl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
   [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
   [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
 ];
@@ -128,9 +129,9 @@ export const MAP_DEFS: MapDef[] = [
     encounterGroup: 'world_field',
     npcs: [],
     exits: [
-      { tileX: 2,  tileY: 2,  targetMap: 'village', targetX: 9,  targetY: 13 },
-      { tileX: 35, tileY: 2,  targetMap: 'castle',  targetX: 9,  targetY: 13 },
-      { tileX: 19, tileY: 19, targetMap: 'dungeon', targetX: 9,  targetY: 13 },
+      { tileX: 2,  tileY: 2,  targetMap: 'village', targetX: 9,  targetY: 11 },
+      { tileX: 35, tileY: 2,  targetMap: 'castle',  targetX: 9,  targetY: 11 },
+      { tileX: 19, tileY: 19, targetMap: 'dungeon', targetX: 9,  targetY: 11 },
     ],
   },
   {
