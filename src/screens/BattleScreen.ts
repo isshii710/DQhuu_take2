@@ -108,7 +108,7 @@ export class BattleScreen {
     this.root.appendChild(bg);
 
     // ── Enemy area ──
-    const enemyArea = el('div','position:relative;flex:0 0 44%;display:flex;align-items:center;justify-content:center;gap:24px;');
+    const enemyArea = el('div','position:relative;z-index:1;flex:0 0 38%;display:flex;align-items:center;justify-content:center;gap:24px;');
     const count = this.enemies.length;
     this.enemies.forEach((enemy, i) => {
       const wrap = el('div','display:flex;flex-direction:column;align-items:center;gap:6px;');
@@ -149,11 +149,12 @@ export class BattleScreen {
     this.root.appendChild(enemyArea);
 
     // ── Horizon line ──
-    const horizon = el('div','height:2px;background:rgba(68,34,34,0.7);flex-shrink:0;');
+    const horizon = el('div','position:relative;z-index:1;height:2px;background:rgba(68,34,34,0.7);flex-shrink:0;');
     this.root.appendChild(horizon);
 
     // ── Player panel ──
     const panel = el('div',`
+      position:relative;z-index:1;
       flex:0 0 auto;padding:10px 12px 6px;
       background:rgba(10,10,30,0.95);
       border-top:1px solid rgba(212,175,55,0.4);
