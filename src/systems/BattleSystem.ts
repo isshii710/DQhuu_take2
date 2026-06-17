@@ -159,7 +159,7 @@ export interface LevelUpResult {
 export function applyExpGain(save: CharacterSave, exp: number): LevelUpResult {
   save.exp += exp;
   const required = expForLevel(save.level + 1);
-  if (save.exp >= required && save.level < 50) {
+  if (save.exp >= required && save.level < 99) {
     save.level++;
     const cls = getClassDef(save.className);
     const g = cls.growthPerLevel;

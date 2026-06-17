@@ -63,7 +63,7 @@ export function givePartyExp(save: CharacterSave, exp: number): { name: string; 
   for (const member of activeCompanions) {
     member.exp += exp;
     const required = expForLevel(member.level + 1);
-    if (member.exp >= required && member.level < 50) {
+    if (member.exp >= required && member.level < 99) {
       member.level++;
       const cls = getClassDef(member.className);
       const g = cls.growthPerLevel;
