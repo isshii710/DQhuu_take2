@@ -42,7 +42,7 @@ export const T = {
   CHEST:  13,
 } as const;
 
-export const WALKABLE: Set<number> = new Set([T.GRASS, T.PATH, T.FOREST, T.SAND, T.VILLAGE, T.CASTLE, T.FLOOR, T.DOOR]);
+export const WALKABLE: Set<number> = new Set([T.GRASS, T.PATH, T.FOREST, T.SAND, T.VILLAGE, T.CASTLE, T.FLOOR, T.DOOR, T.DUNGEON]);
 export const ENCOUNTER_TILES: Set<number> = new Set([T.GRASS, T.FOREST, T.SAND]);
 
 // Map IDs
