@@ -2,7 +2,6 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { HorizontalTiltShiftShader } from 'three/examples/jsm/shaders/HorizontalTiltShiftShader.js';
 import { VerticalTiltShiftShader } from 'three/examples/jsm/shaders/VerticalTiltShiftShader.js';
 import type { MapDef, NpcDef } from '../types';
@@ -139,9 +138,8 @@ export class WorldRenderer {
   readonly camera: THREE.OrthographicCamera;
   readonly renderer: THREE.WebGLRenderer;
 
-  // Post-processing (HD-2D tilt-shift + bloom + warm grade)
+  // Post-processing (HD-2D tilt-shift + warm grade)
   private composer!: EffectComposer;
-  private bloomPass!: UnrealBloomPass;
   private hTiltPass!: ShaderPass;
   private vTiltPass!: ShaderPass;
   private readonly TILT_FOCUS = 0.42; // focused band (screen-space, 0=bottom .. 1=top)
@@ -169,9 +167,6 @@ export class WorldRenderer {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(0x0a0a1a);
-    // Cinematic tone mapping for the HD-2D highlight rolloff
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
 
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(0x0a0a1a, 22, 42);
@@ -212,10 +207,7 @@ export class WorldRenderer {
 
     const renderPass = new RenderPass(this.scene, this.camera);
 
-    // Bloom — subtle glow only on very bright objects (exit rings, etc.)
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.28, 0.55, 0.88);
-
-    // Tilt-shift — keeps a focused horizontal band, blurs near/far for the diorama feel
+    // Tilt-shift — diorama depth-of-field feel
     this.hTiltPass = new ShaderPass(HorizontalTiltShiftShader);
     this.vTiltPass = new ShaderPass(VerticalTiltShiftShader);
     this.hTiltPass.uniforms['r'].value = this.TILT_FOCUS;
@@ -224,7 +216,6 @@ export class WorldRenderer {
     const gradePass = new ShaderPass(WarmGradeShader);
 
     this.composer.addPass(renderPass);
-    this.composer.addPass(this.bloomPass);
     this.composer.addPass(this.hTiltPass);
     this.composer.addPass(this.vTiltPass);
     this.composer.addPass(gradePass);
@@ -243,13 +234,10 @@ export class WorldRenderer {
     this.camera.updateProjectionMatrix();
 
     // Resize post-processing to match
-    if (this.composer) {
+    if (this.composer && this.hTiltPass) {
       this.composer.setSize(w, h);
-      this.bloomPass.setSize(w, h);
-      if (this.hTiltPass) {
-        this.hTiltPass.uniforms['h'].value = this.TILT_BLUR / w;
-        this.vTiltPass.uniforms['v'].value = this.TILT_BLUR / h;
-      }
+      this.hTiltPass.uniforms['h'].value = this.TILT_BLUR / w;
+      this.vTiltPass.uniforms['v'].value = this.TILT_BLUR / h;
     }
   }
 
