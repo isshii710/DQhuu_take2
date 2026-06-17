@@ -1,8 +1,53 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { HorizontalTiltShiftShader } from 'three/examples/jsm/shaders/HorizontalTiltShiftShader.js';
+import { VerticalTiltShiftShader } from 'three/examples/jsm/shaders/VerticalTiltShiftShader.js';
 import type { MapDef, NpcDef } from '../types';
 import { T } from '../config';
 import { getHeroTexture, getNpcTexture, getTileCanvas } from '../engine/TextureCache';
 import { BillboardSprite } from './BillboardSprite';
+
+// HD-2D look: warm cinematic grade + vignette, applied in display space (after OutputPass)
+const WarmGradeShader = {
+  uniforms: {
+    tDiffuse:   { value: null as THREE.Texture | null },
+    offset:     { value: 1.05 },  // vignette spread
+    darkness:   { value: 0.72 },  // vignette strength
+    warmth:     { value: 0.022 }, // warm tint
+    saturation: { value: 1.2 },
+    contrast:   { value: 1.07 },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+  `,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform float offset, darkness, warmth, saturation, contrast;
+    varying vec2 vUv;
+    void main() {
+      vec4 texel = texture2D(tDiffuse, vUv);
+      vec3 col = texel.rgb;
+      // contrast around mid-grey
+      col = (col - 0.5) * contrast + 0.5;
+      // saturation
+      float l = dot(col, vec3(0.299, 0.587, 0.114));
+      col = mix(vec3(l), col, saturation);
+      // warm grade
+      col.r += warmth;
+      col.b -= warmth * 0.6;
+      // vignette
+      vec2 uv = (vUv - 0.5) * offset;
+      float vig = clamp(1.0 - dot(uv, uv) * darkness, 0.0, 1.0);
+      col *= vig;
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), texel.a);
+    }
+  `,
+};
 
 const TILE = 1;          // 1 Three.js unit = 1 tile
 const SPRITE_Y = 0.52;  // height of sprite above ground
@@ -95,6 +140,14 @@ export class WorldRenderer {
   readonly camera: THREE.OrthographicCamera;
   readonly renderer: THREE.WebGLRenderer;
 
+  // Post-processing (HD-2D tilt-shift + bloom + warm grade)
+  private composer!: EffectComposer;
+  private bloomPass!: UnrealBloomPass;
+  private hTiltPass!: ShaderPass;
+  private vTiltPass!: ShaderPass;
+  private readonly TILT_FOCUS = 0.46; // focused band (screen-space, 0=bottom .. 1=top)
+  private readonly TILT_BLUR  = 3.0;  // blur strength multiplier
+
   private mapGroup = new THREE.Group();
   private exitMarkers = new THREE.Group();
   private exitMaterials: THREE.MeshBasicMaterial[] = [];
@@ -117,9 +170,12 @@ export class WorldRenderer {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(0x0a0a1a);
+    // Cinematic tone mapping for the HD-2D highlight rolloff
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.12;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0x0a0a1a, 25, 40);
+    this.scene.fog = new THREE.Fog(0x0a0a1a, 22, 42);
 
     // Orthographic camera for classic 3/4 RPG view
     const aspect = canvas.clientWidth / canvas.clientHeight;
@@ -128,18 +184,53 @@ export class WorldRenderer {
     this.camera.position.set(0, this.CAM_H, this.CAM_Z_OFFSET);
     this.camera.lookAt(0, 0, 0);
 
-    // Lighting
-    const ambient = new THREE.AmbientLight(0xffeedd, 0.75);
-    const sun = new THREE.DirectionalLight(0xfff8e7, 0.9);
-    sun.position.set(5, 12, -4);
-    this.scene.add(ambient, sun);
+    // Lighting — warm key light + cool fill for HD-2D depth
+    const ambient = new THREE.AmbientLight(0xffe6c4, 0.62);
+    const sun = new THREE.DirectionalLight(0xfff2d6, 1.15);
+    sun.position.set(6, 14, -3);
+    const fill = new THREE.DirectionalLight(0x6688cc, 0.35);
+    fill.position.set(-6, 8, 6);
+    this.scene.add(ambient, sun, fill);
 
     this.scene.add(this.mapGroup);
     this.scene.add(this.exitMarkers);
 
+    // Post-processing pipeline
+    this.setupComposer(canvas);
+
     // Handle resize
     this.onResize();
     window.addEventListener('resize', () => this.onResize());
+  }
+
+  private setupComposer(canvas: HTMLCanvasElement) {
+    const w = canvas.clientWidth || window.innerWidth;
+    const h = canvas.clientHeight || window.innerHeight;
+
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.composer.setSize(w, h);
+
+    const renderPass = new RenderPass(this.scene, this.camera);
+
+    // Bloom — soft glow on bright tiles, lights and exit markers
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.5, 0.65, 0.62);
+
+    // Tilt-shift — keeps a focused horizontal band, blurs near/far for the diorama feel
+    this.hTiltPass = new ShaderPass(HorizontalTiltShiftShader);
+    this.vTiltPass = new ShaderPass(VerticalTiltShiftShader);
+    this.hTiltPass.uniforms['r'].value = this.TILT_FOCUS;
+    this.vTiltPass.uniforms['r'].value = this.TILT_FOCUS;
+
+    const outputPass = new OutputPass();
+    const gradePass = new ShaderPass(WarmGradeShader);
+
+    this.composer.addPass(renderPass);
+    this.composer.addPass(this.bloomPass);
+    this.composer.addPass(this.hTiltPass);
+    this.composer.addPass(this.vTiltPass);
+    this.composer.addPass(outputPass);
+    this.composer.addPass(gradePass);
   }
 
   onResize() {
@@ -153,6 +244,14 @@ export class WorldRenderer {
     this.camera.top    =  f / aspect;
     this.camera.bottom = -f / aspect;
     this.camera.updateProjectionMatrix();
+
+    // Resize post-processing to match
+    if (this.composer) {
+      this.composer.setSize(w, h);
+      this.bloomPass.setSize(w, h);
+      this.hTiltPass.uniforms['h'].value = this.TILT_BLUR / w;
+      this.vTiltPass.uniforms['v'].value = this.TILT_BLUR / h;
+    }
   }
 
   // ─── Map building ─────────────────────────────────────────────────────────
@@ -373,7 +472,7 @@ export class WorldRenderer {
   }
 
   render() {
-    this.renderer.render(this.scene, this.camera);
+    this.composer.render();
   }
 
   get playerSpriteRef(): BillboardSprite | null { return this.playerSprite; }
