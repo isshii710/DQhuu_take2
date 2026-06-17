@@ -60,6 +60,11 @@ export class WorldScreen {
 
   private heldDir: Direction | null = null;
 
+  private isHosting = false;
+  private hostedRoomCode = '';
+  private guestCount = 0;
+  private roomCodeOverlay: HTMLElement | null = null;
+
   private onBattle!: (opts: BattleOpts) => void;
   private onMenu!:   (save: CharacterSave, onClose: (s: CharacterSave)=>void) => void;
 
@@ -300,7 +305,9 @@ export class WorldScreen {
     // Check NPC
     const npc = mapDef.npcs.find(n=>n.tileX===nx&&n.tileY===ny);
     if (npc) {
-      if (npc.recruitId) {
+      if (npc.isInn) {
+        this.showInnDialog();
+      } else if (npc.recruitId) {
         this.handleRecruitNpc(npc);
       } else {
         this.showDialogue(npc.name, npc.dialogue);
@@ -413,7 +420,9 @@ export class WorldScreen {
                       [tx+1, ty  ];
     const npc = getMapDef(this.mapId).npcs.find(n=>n.tileX===fx&&n.tileY===fy);
     if (npc) {
-      if (npc.recruitId) {
+      if (npc.isInn) {
+        this.showInnDialog();
+      } else if (npc.recruitId) {
         this.handleRecruitNpc(npc);
       } else {
         this.showDialogue(npc.name, npc.dialogue);
@@ -441,6 +450,316 @@ export class WorldScreen {
       this.save = s;
       this.hudEl.update(s, getMapDef(this.mapId).name);
     });
+  }
+
+  // ─── 宿屋ダイアログ ──────────────────────────────────────────────────────────
+
+  private showInnDialog() {
+    if (this.dialogOpen) return;
+    this.dialogOpen = true;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      background:rgba(0,0,0,0.55);pointer-events:auto;z-index:20;
+    `;
+
+    const box = document.createElement('div');
+    box.style.cssText = `
+      background:rgba(10,10,30,0.97);border:2px solid rgba(212,175,55,0.7);
+      border-radius:8px;padding:20px 22px;width:260px;
+      font-family:${FONT};
+    `;
+
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#FFD700;font-size:14px;margin-bottom:6px;';
+    title.textContent = '宿屋のおかみ';
+    const msg = document.createElement('div');
+    msg.style.cssText = 'color:#FFFDE7;font-size:13px;margin-bottom:16px;line-height:1.5;';
+    msg.textContent = 'いらっしゃい！\n何かご用ですか？';
+
+    const btnStyle = (c = '#FFFDE7', bg = 'rgba(26,26,46,0.9)') => `
+      display:block;width:100%;padding:10px 0;margin-bottom:8px;
+      background:${bg};color:${c};
+      border:1px solid rgba(212,175,55,0.5);border-radius:4px;
+      font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;
+    `;
+
+    const close = () => { overlay.remove(); this.dialogOpen = false; };
+
+    // 宿に泊まる
+    const restBtn = document.createElement('button');
+    restBtn.style.cssText = btnStyle('#AAFFAA','rgba(10,30,10,0.9)');
+    restBtn.textContent = '宿に泊まる';
+    restBtn.addEventListener('click', () => {
+      this.save.stats.hp = this.save.stats.maxHp;
+      this.save.stats.mp = this.save.stats.maxMp;
+      // 仲間のHP/MPも回復
+      for (const m of this.save.party) {
+        m.stats.hp = m.stats.maxHp;
+        m.stats.mp = m.stats.maxMp;
+      }
+      writeSave(this.save);
+      close();
+      this.showDialogue('宿屋のおかみ', ['ゆっくり休めましたか？', 'HPとMPが全回復しました！']);
+    });
+
+    // 仲間を募集する / 募集をやめる
+    const recruitBtn = document.createElement('button');
+    if (this.isHosting) {
+      recruitBtn.style.cssText = btnStyle('#FFAAAA','rgba(30,10,10,0.9)');
+      recruitBtn.textContent = `募集をやめる（合言葉: ${this.hostedRoomCode}）`;
+      recruitBtn.addEventListener('click', () => {
+        mpManager.closeWorld();
+        this.isHosting = false;
+        this.roomCodeOverlay?.remove();
+        this.roomCodeOverlay = null;
+        close();
+        this.showDialogue('宿屋のおかみ', ['仲間の募集を終了しました。']);
+      });
+    } else {
+      recruitBtn.style.cssText = btnStyle('#AADDFF','rgba(10,10,30,0.9)');
+      recruitBtn.textContent = '仲間を募集する';
+      recruitBtn.addEventListener('click', () => {
+        close();
+        this.startHosting();
+      });
+    }
+
+    // 仲間の世界へ行く
+    const guestBtn = document.createElement('button');
+    guestBtn.style.cssText = btnStyle();
+    guestBtn.textContent = '仲間の世界へ行く';
+    guestBtn.addEventListener('click', () => {
+      close();
+      this.showGuestJoinDialog();
+    });
+
+    // やめる
+    const cancelBtn = document.createElement('button');
+    cancelBtn.style.cssText = btnStyle('#888899','rgba(16,16,28,0.9)');
+    cancelBtn.textContent = 'やめる';
+    cancelBtn.addEventListener('click', close);
+
+    box.appendChild(title);
+    box.appendChild(msg);
+    box.appendChild(restBtn);
+    box.appendChild(recruitBtn);
+    box.appendChild(guestBtn);
+    box.appendChild(cancelBtn);
+    overlay.appendChild(box);
+    this.uiRoot.appendChild(overlay);
+  }
+
+  private startHosting() {
+    const connectAndOpen = () => {
+      const player: import('../types').NetPlayer = {
+        id: mpManager.socketId,
+        name: this.save.name, className: this.save.className,
+        x: this.save.position.tileX, y: this.save.position.tileY,
+        mapId: this.save.position.mapId,
+        hp: this.save.stats.hp, maxHp: this.save.stats.maxHp,
+        mp: this.save.stats.mp, maxMp: this.save.stats.maxMp,
+        level: this.save.level, ready: true,
+      };
+      mpManager.openWorld(player);
+      mpManager.on('world_opened', (data: unknown) => {
+        const d = data as { roomId: string };
+        this.isHosting = true;
+        this.hostedRoomCode = d.roomId;
+        this.isMultiplayer = true;
+        this.isHost = true;
+        this.showRoomCodeOverlay(d.roomId);
+        this.setupGuestListeners();
+        this.showDialogue('宿屋のおかみ', [
+          `世界を開放しました！`,
+          `合言葉は「${d.roomId}」です。`,
+          '仲間に伝えてください！',
+        ]);
+      });
+    };
+
+    if (mpManager.connected) {
+      connectAndOpen();
+    } else {
+      this.showDialogue('宿屋のおかみ', ['サーバーに接続中…']);
+      mpManager.connect().then(() => {
+        connectAndOpen();
+      }).catch(() => {
+        this.showDialogue('宿屋のおかみ', ['サーバーに接続できませんでした。']);
+      });
+    }
+  }
+
+  private showGuestJoinDialog() {
+    this.dialogOpen = true;
+    let code = '';
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      background:rgba(0,0,0,0.55);pointer-events:auto;z-index:20;
+    `;
+    const box = document.createElement('div');
+    box.style.cssText = `
+      background:rgba(10,10,30,0.97);border:2px solid rgba(212,175,55,0.7);
+      border-radius:8px;padding:20px 22px;width:260px;font-family:${FONT};
+    `;
+
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#FFD700;font-size:14px;margin-bottom:12px;';
+    title.textContent = '仲間の合言葉を入力';
+
+    const display = document.createElement('div');
+    display.style.cssText = `
+      background:rgba(10,26,58,0.95);border:2px solid rgba(212,175,55,0.7);
+      border-radius:4px;padding:10px;font-size:24px;color:#FFD700;
+      font-family:monospace;letter-spacing:8px;text-align:center;margin-bottom:8px;
+    `;
+    display.textContent = '____';
+
+    const status = document.createElement('div');
+    status.style.cssText = 'color:#FF8888;font-size:12px;height:16px;margin-bottom:10px;';
+
+    const hiddenInput = document.createElement('input');
+    hiddenInput.type = 'text'; hiddenInput.maxLength = 4;
+    hiddenInput.style.cssText = 'position:fixed;opacity:0;top:0;left:0;width:1px;height:1px;';
+    document.body.appendChild(hiddenInput);
+    setTimeout(() => hiddenInput.focus(), 100);
+    hiddenInput.addEventListener('input', () => {
+      code = hiddenInput.value.toUpperCase().slice(0, 4);
+      display.textContent = (code + '____').slice(0, 4);
+    });
+
+    const close = () => { hiddenInput.remove(); overlay.remove(); this.dialogOpen = false; };
+
+    const joinBtn = document.createElement('button');
+    joinBtn.style.cssText = `
+      display:block;width:100%;padding:10px 0;margin-bottom:8px;
+      background:rgba(10,30,10,0.9);color:#AAFFAA;
+      border:1px solid rgba(68,187,68,0.5);border-radius:4px;
+      font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;
+    `;
+    joinBtn.textContent = '行く！';
+    joinBtn.addEventListener('click', () => {
+      if (code.length < 4) { status.textContent = '4文字の合言葉を入力してください'; return; }
+      status.style.color = '#AAAACC';
+      status.textContent = '接続中…';
+      const doJoin = () => {
+        const player: import('../types').NetPlayer = {
+          id: mpManager.socketId,
+          name: this.save.name, className: this.save.className,
+          x: this.save.position.tileX, y: this.save.position.tileY,
+          mapId: this.save.position.mapId,
+          hp: this.save.stats.hp, maxHp: this.save.stats.maxHp,
+          mp: this.save.stats.mp, maxMp: this.save.stats.maxMp,
+          level: this.save.level, ready: true,
+        };
+        mpManager.guestJoin(code, player);
+        mpManager.on('world_joined', (data: unknown) => {
+          const d = data as { roomId: string; mapId: MapId; hostX: number; hostY: number; players: import('../types').NetPlayer[] };
+          close();
+          this.isMultiplayer = true;
+          this.isHost = false;
+          this.changeMap(d.mapId, d.hostX, d.hostY);
+          for (const p of d.players) {
+            if (p.id !== mpManager.socketId) this.addOtherPlayer(p);
+          }
+          this.setupMultiplayer();
+          this.showDialogue('システム', [`${d.mapId === 'village' ? 'ハジメ村' : d.mapId}に来ました！`]);
+        });
+        mpManager.on('error', (data: unknown) => {
+          status.textContent = (data as { msg: string }).msg;
+        });
+      };
+      if (mpManager.connected) doJoin();
+      else mpManager.connect().then(doJoin).catch(() => { status.textContent = 'サーバーに接続できません'; });
+    });
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.style.cssText = `
+      display:block;width:100%;padding:8px 0;
+      background:rgba(16,16,28,0.9);color:#888899;
+      border:1px solid rgba(51,68,102,0.5);border-radius:4px;
+      font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;
+    `;
+    cancelBtn.textContent = 'やめる';
+    cancelBtn.addEventListener('click', close);
+
+    box.appendChild(title);
+    box.appendChild(display);
+    box.appendChild(status);
+    box.appendChild(joinBtn);
+    box.appendChild(cancelBtn);
+    overlay.appendChild(box);
+    this.uiRoot.appendChild(overlay);
+  }
+
+  private showRoomCodeOverlay(code: string) {
+    this.roomCodeOverlay?.remove();
+    const el = document.createElement('div');
+    el.style.cssText = `
+      position:absolute;top:8px;right:8px;
+      background:rgba(10,10,30,0.92);border:1px solid rgba(212,175,55,0.6);
+      border-radius:6px;padding:6px 10px;pointer-events:none;z-index:10;
+      font-family:monospace;
+    `;
+    el.innerHTML = `
+      <div style="color:#AAAACC;font-size:9px;">募集中</div>
+      <div style="color:#FFD700;font-size:16px;letter-spacing:4px;">${code}</div>
+      <div style="color:#888899;font-size:9px;">ゲスト${this.guestCount}/3</div>
+    `;
+    this.uiRoot.appendChild(el);
+    this.roomCodeOverlay = el;
+  }
+
+  private setupGuestListeners() {
+    mpManager.on('guest_arrived', (data: unknown) => {
+      const d = data as { player: import('../types').NetPlayer };
+      this.guestCount++;
+      this.syncPartyForGuests();
+      this.addOtherPlayer(d.player);
+      this.showDialogue('システム', [`${d.player.name}が来た！`]);
+      if (this.roomCodeOverlay) {
+        const countEl = this.roomCodeOverlay.querySelector('div:last-child') as HTMLElement | null;
+        if (countEl) countEl.textContent = `ゲスト${this.guestCount}/3`;
+      }
+    });
+
+    mpManager.on('player_left', (data: unknown) => {
+      const d = data as { playerId: string; name?: string };
+      const op = this.otherPlayers.get(d.playerId);
+      if (op) {
+        op.sprite.removeFrom(this.renderer.scene);
+        this.otherPlayers.delete(d.playerId);
+        if (!op.data.id.startsWith('party_')) {
+          this.guestCount = Math.max(0, this.guestCount - 1);
+          this.restorePartyAfterGuests();
+        }
+      }
+    });
+  }
+
+  private syncPartyForGuests() {
+    // ゲスト数に応じて仲間をベンチに移す（合計4人以内）
+    const maxCompanions = 3 - this.guestCount;
+    while (this.save.activeMemberIds.length > maxCompanions) {
+      const last = this.save.activeMemberIds[this.save.activeMemberIds.length - 1];
+      this.save.activeMemberIds.pop();
+      console.log(`[party] Benched ${last} for guest`);
+    }
+    writeSave(this.save);
+  }
+
+  private restorePartyAfterGuests() {
+    const maxCompanions = 3 - this.guestCount;
+    for (const m of this.save.party) {
+      if (this.save.activeMemberIds.length >= maxCompanions) break;
+      if (!this.save.activeMemberIds.includes(m.id)) {
+        this.save.activeMemberIds.push(m.id);
+      }
+    }
+    writeSave(this.save);
   }
 
   // ─── Keyboard ──────────────────────────────────────────────────────────────

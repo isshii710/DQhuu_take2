@@ -163,6 +163,7 @@ export const MAP_DEFS: MapDef[] = [
         ],
         tileX: 15, tileY: 10, spriteColor: 0xFFAAAA,
       },
+      { id: 'inn_keeper', name: '宿屋のおかみ', dialogue: ['ここは宿屋です。'], tileX: 15, tileY: 5, spriteColor: 0xFFCCAA, isInn: true },
       { id: 'npc_aria', name: 'アリア', dialogue: ['みんなのHPを回復します！'], tileX: 7, tileY: 6, spriteColor: 0xFF88CC, recruitId: 'aria' },
       { id: 'npc_galen', name: 'ガレン', dialogue: ['俺が守ってやる！'], tileX: 13, tileY: 7, spriteColor: 0xFFAA44, recruitId: 'galen' },
       { id: 'npc_elda', name: 'エルダ', dialogue: ['光の加護がありますように。'], tileX: 7, tileY: 10, spriteColor: 0xFFFFAA, recruitId: 'elda' },

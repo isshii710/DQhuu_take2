@@ -15,7 +15,12 @@ type MPEvent =
   | 'battle_ended'
   | 'host_changed'
   | 'chat'
-  | 'error';
+  | 'error'
+  // DQ9スタイル
+  | 'world_opened'
+  | 'world_joined'
+  | 'guest_arrived'
+  | 'world_closed';
 
 type MPListener = (data: unknown) => void;
 
@@ -49,6 +54,7 @@ export class MultiplayerManager {
       'player_ready_update','game_start','player_moved',
       'battle_started','battle_round_result','battle_ended',
       'host_changed','chat','error',
+      'world_opened','world_joined','guest_arrived','world_closed',
     ];
     for (const ev of events) {
       this.socket.on(ev, (data: unknown) => {
@@ -104,6 +110,19 @@ export class MultiplayerManager {
 
   sendChat(text: string) {
     this.socket?.emit('chat', { text });
+  }
+
+  // ── DQ9スタイル ────────────────────────────────────────────────────────────
+  openWorld(player: NetPlayer) {
+    this.socket?.emit('open_world', { player });
+  }
+
+  closeWorld() {
+    this.socket?.emit('close_world');
+  }
+
+  guestJoin(roomId: string, player: NetPlayer) {
+    this.socket?.emit('guest_join', { roomId, player });
   }
 }
 

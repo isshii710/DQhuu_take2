@@ -128,7 +128,7 @@ export class TitleScreen {
     wrap.appendChild(btn('はじめから', () => { this.screen='class_select'; this.renderScreen(); }));
     const contBtn = btn('つづきから', () => this.continueGame(), hasSave() ? '' : 'opacity:0.4;cursor:default;pointer-events:none;');
     wrap.appendChild(contBtn);
-    wrap.appendChild(btn('マルチプレイ', () => { this.screen='multiplayer'; this.renderScreen(); }));
+    wrap.appendChild(btn('仲間の世界へ行く', () => { this.screen='mp_join'; this.renderScreen(); }));
 
     const ver = el('div','color:#333355;font-size:10px;margin-top:20px;font-family:monospace;','v1.0.0  ©2026 Aldea Legend');
     wrap.appendChild(ver);
