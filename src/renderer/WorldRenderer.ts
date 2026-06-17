@@ -160,7 +160,7 @@ export class WorldRenderer {
   loadMap(mapDef: MapDef) {
     // Clear previous map
     this.mapGroup.clear();
-    this.npcSprites.forEach(s => s.removeFrom(this.scene));
+    this.npcSprites.forEach(s => s?.removeFrom(this.scene));
     this.npcSprites.clear();
     this.clearFieldEnemies();
 
@@ -256,6 +256,23 @@ export class WorldRenderer {
 
   addNpc(npc: NpcDef) {
     if (this.npcSprites.has(npc.id)) return;
+
+    // Treasure chest — render as a 3D box, not a billboard sprite
+    if (npc.isChest) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.32, 0.42), mat(0x5D4037));
+      body.position.y = 0.16;
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.18, 0.42), mat(0xDBA523));
+      lid.position.y = 0.41;
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.57, 0.06, 0.44), mat(0xFFD700));
+      band.position.y = 0.26;
+      g.add(body, lid, band);
+      g.position.set(npc.tileX + 0.5, 0, npc.tileY + 0.5);
+      this.mapGroup.add(g);
+      this.npcSprites.set(npc.id, null as unknown as BillboardSprite); // mark as placed
+      return;
+    }
+
     const sp = new BillboardSprite(getNpcTexture(), 1, 1.0);
     // Apply NPC color as tint (convert hex to RGB 0-1)
     const r = ((npc.spriteColor >> 16) & 0xff) / 255;

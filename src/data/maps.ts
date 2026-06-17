@@ -99,24 +99,70 @@ const CASTLE_TILES: number[][] = [
   [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
 ];
 
-// 20×16 dungeon — fully connected, no dead ends
-// Main corridors at rows 1, 3, 7, 11, 13; boss at (9,1)
+// ─────────────────────────────────────────────────────────────────────────────
+// 3-floor dungeon  (20×16 each)
+// B1F (dungeon)  : world entrance at bottom (9,14)/(10,14); stairs to B2F at (9,1)/(10,1)
+// B2F (dungeon2) : stairs up at (9,1)/(10,1); stairs down to B3F at (9,13)/(10,13)
+// B3F (dungeon3) : arrive at (9,2); boss at (9,1); stairs back at (9,13)/(10,13)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// B1F — wide open corridors with pillar columns, no boss
 const DUNGEON_TILES: number[][] = [
   [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],  // ↓B2F stairs
   [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
-  [Wl,Fl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
   [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
-  [Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Wl],
-  [Wl,Fl,Fl,Fl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Wl],
-  [Wl,Fl,Wl,Fl,Fl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Fl,Fl,Wl,Wl,Fl,Wl],
-  [Wl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Wl],
-  [Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Wl],
-  [Wl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
-  [Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl],
-  [Wl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Wl],
-  [Wl,Wl,Wl,Fl,Wl,Wl,Fl,Wl,Wl,Fl,Wl,Wl,Fl,Wl,Wl,Fl,Wl,Wl,Wl,Wl],
   [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
-  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],  // ↑world exit
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
+// B2F — medium-depth floor, stairs up/down
+const DUNGEON2_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],  // ↑B1F stairs
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],  // ↓B3F stairs
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
+// B3F — boss chamber; corridor funnels to a wide boss arena at the top
+const DUNGEON3_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],  // boss at (9,1)
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],  // arrive at (9,2)
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],  // chest at (15,3)
+  [Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl],
+  [Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl],
+  [Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl],
+  [Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl],
+  [Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl],
+  [Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl],  // ↑B2F stairs
+  [Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl],
   [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
 ];
 
@@ -215,7 +261,7 @@ export const MAP_DEFS: MapDef[] = [
   },
   {
     id: 'dungeon',
-    name: '闇の洞窟',
+    name: '闇の洞窟 地下1階',
     tiles: DUNGEON_TILES,
     bgColor: 0x110011,
     encounterGroup: 'dungeon',
@@ -224,12 +270,63 @@ export const MAP_DEFS: MapDef[] = [
         id: 'trapped', name: '囚われた旅人',
         dialogue: [
           '助けてくれ…！',
-          'この奥に「聖石の欠片」がある。',
-          '魔王の番人・シャドウナイトを倒せば手に入るはずだ。',
+          'もっと奥に行くと「聖石の欠片」がある。',
+          '地下3階に魔王グロスールが待ち受けているぞ！',
         ],
-        tileX: 3, tileY: 5, spriteColor: 0xFF8888,
+        tileX: 2, tileY: 10, spriteColor: 0xFF8888,
       },
-      { id: 'npc_zain', name: 'ゼイン', dialogue: ['罠には気をつけろ。'], tileX: 15, tileY: 5, spriteColor: 0x44FFAA, recruitId: 'zain' },
+      { id: 'npc_zain', name: 'ゼイン', dialogue: ['罠には気をつけろ。'], tileX: 17, tileY: 10, spriteColor: 0x44FFAA, recruitId: 'zain' },
+      {
+        id: 'chest_b1f', name: '宝箱', dialogue: [],
+        tileX: 3, tileY: 5, spriteColor: 0xFFD700,
+        isChest: true,
+        chestPool: ['herb', 'potion', 'antidote', 'leather', 'wood_sword', 'dagger'],
+      },
+    ],
+    exits: [
+      { tileX: 9,  tileY: 1,  targetMap: 'dungeon2', targetX: 9,  targetY: 2  },
+      { tileX: 10, tileY: 1,  targetMap: 'dungeon2', targetX: 10, targetY: 2  },
+      { tileX: 9,  tileY: 14, targetMap: 'world',    targetX: 19, targetY: 18 },
+      { tileX: 10, tileY: 14, targetMap: 'world',    targetX: 19, targetY: 18 },
+    ],
+  },
+  {
+    id: 'dungeon2',
+    name: '闇の洞窟 地下2階',
+    tiles: DUNGEON2_TILES,
+    bgColor: 0x0d000d,
+    encounterGroup: 'dungeon',
+    npcs: [
+      {
+        id: 'sage_b2f', name: '謎の賢者',
+        dialogue: [
+          '地下3階には強大な魔王グロスールが棲む。',
+          '十分に準備を整えてから挑め。',
+          '地上に戻るには上の階段を使うのじゃ。',
+        ],
+        tileX: 3, tileY: 10, spriteColor: 0xAAAAFF,
+      },
+      {
+        id: 'chest_b2f', name: '宝箱', dialogue: [],
+        tileX: 15, tileY: 5, spriteColor: 0xFFD700,
+        isChest: true,
+        chestPool: ['potion', 'mana_herb', 'chain_mail', 'iron_helm', 'staff', 'leather_ring'],
+      },
+    ],
+    exits: [
+      { tileX: 9,  tileY: 1,  targetMap: 'dungeon',  targetX: 9,  targetY: 3  },
+      { tileX: 10, tileY: 1,  targetMap: 'dungeon',  targetX: 10, targetY: 3  },
+      { tileX: 9,  tileY: 13, targetMap: 'dungeon3', targetX: 9,  targetY: 2  },
+      { tileX: 10, tileY: 13, targetMap: 'dungeon3', targetX: 10, targetY: 2  },
+    ],
+  },
+  {
+    id: 'dungeon3',
+    name: '闇の洞窟 地下3階',
+    tiles: DUNGEON3_TILES,
+    bgColor: 0x080008,
+    encounterGroup: 'dungeon',
+    npcs: [
       {
         id: 'boss_grosur', name: '魔王グロスール',
         dialogue: [
@@ -239,10 +336,16 @@ export const MAP_DEFS: MapDef[] = [
         ],
         tileX: 9, tileY: 1, spriteColor: 0xFF0044,
       },
+      {
+        id: 'chest_b3f', name: '宝箱', dialogue: [],
+        tileX: 15, tileY: 3, spriteColor: 0xFFD700,
+        isChest: true,
+        chestPool: ['elixir', 'ether', 'plate_mail', 'silver_sword', 'crystal_staff', 'silver_ring'],
+      },
     ],
     exits: [
-      { tileX: 9,  tileY: 14, targetMap: 'world', targetX: 19, targetY: 18 },
-      { tileX: 10, tileY: 14, targetMap: 'world', targetX: 19, targetY: 18 },
+      { tileX: 9,  tileY: 13, targetMap: 'dungeon2', targetX: 9,  targetY: 12 },
+      { tileX: 10, tileY: 13, targetMap: 'dungeon2', targetX: 10, targetY: 12 },
     ],
   },
 ];

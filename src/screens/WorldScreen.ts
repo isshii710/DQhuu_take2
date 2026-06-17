@@ -33,6 +33,8 @@ const MAP_FLAGS: Partial<Record<MapId, string>> = {
   world: 'world_visited',
   castle: 'castle_visited',
   dungeon: 'dungeon_entered',
+  dungeon2: 'dungeon2_entered',
+  dungeon3: 'dungeon3_entered',
 };
 
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
@@ -219,6 +221,7 @@ export class WorldScreen {
     this.playerSprite = this.renderer.spawnPlayer(ci, save.position.tileX, save.position.tileY);
 
     // Field enemies
+    const isDungeon = (id: string) => id === 'dungeon' || id === 'dungeon2' || id === 'dungeon3';
     const sameMapReturn = opts.fromBattle && this.preBattleMapId === this.mapId;
     if (sameMapReturn) {
       for (const fe of this.fieldEnemies) {
@@ -228,7 +231,7 @@ export class WorldScreen {
       }
     } else {
       this.fieldEnemies = [];
-      if (mapDef.encounterGroup && this.mapId !== 'dungeon') this.spawnFieldEnemies();
+      if (mapDef.encounterGroup && !isDungeon(this.mapId)) this.spawnFieldEnemies();
     }
     this.preBattleMapId = null;
 
@@ -409,7 +412,9 @@ export class WorldScreen {
     // Check NPC
     const npc = mapDef.npcs.find(n=>n.tileX===nx&&n.tileY===ny);
     if (npc) {
-      if (npc.isInn) {
+      if (npc.isChest) {
+        this.showChestDialog(npc);
+      } else if (npc.isInn) {
         this.showInnDialog();
       } else if (npc.shopType) {
         this.showShopDialog(npc);
@@ -447,8 +452,15 @@ export class WorldScreen {
         this.triggerBattle(enemyDefs);
         return;
       }
-      // Random encounters only in dungeon
-      if (this.mapId === 'dungeon') this.checkEncounter(tileId);
+      // Random encounters in dungeons (floor tiles don't match ENCOUNTER_TILES, so check inline)
+      const inDungeon = this.mapId === 'dungeon' || this.mapId === 'dungeon2' || this.mapId === 'dungeon3';
+      if (inDungeon) {
+        this.stepsSinceEncounter++;
+        if (this.stepsSinceEncounter >= 5 && Math.random() < ENCOUNTER_RATE) {
+          this.stepsSinceEncounter = 0;
+          this.triggerBattle();
+        }
+      }
       this.drawMinimap();
       writeSave(this.save);
       if (this.isMultiplayer) {
@@ -477,7 +489,8 @@ export class WorldScreen {
       targetX, targetY
     );
 
-    if (mapDef.encounterGroup && targetMap !== 'dungeon') this.spawnFieldEnemies();
+    const isDungeon = (id: string) => id === 'dungeon' || id === 'dungeon2' || id === 'dungeon3';
+    if (mapDef.encounterGroup && !isDungeon(targetMap)) this.spawnFieldEnemies();
 
     // Minimap for new map
     this.minimapCvs?.remove();
@@ -680,13 +693,6 @@ export class WorldScreen {
     for (const el of this.exitLabels) el.el.remove();
     this.exitLabels = [];
 
-    const MAP_TEXT: Record<string, string> = {
-      world: '🌍 フィールドへ',
-      village: '🏘 ハジメ村へ',
-      castle: '🏰 アルデア城へ',
-      dungeon: '⬇ 闇の洞窟へ',
-    };
-
     const mapDef = getMapDef(this.mapId);
     // De-duplicate exits that share the same tile area (e.g. two door tiles side by side)
     const seen = new Set<string>();
@@ -695,6 +701,17 @@ export class WorldScreen {
       if (seen.has(key)) continue;
       seen.add(key);
 
+      // Direction-aware labels: going UP means returning to a shallower floor
+      const deeper = ['dungeon2', 'dungeon3'];
+      const isGoingUp = deeper.includes(this.mapId) && !deeper.includes(exit.targetMap) && exit.targetMap !== 'world';
+      const MAP_TEXT: Record<string, string> = {
+        world: '🌍 フィールドへ',
+        village: '🏘 ハジメ村へ',
+        castle: '🏰 アルデア城へ',
+        dungeon: isGoingUp ? '⬆ 地下1階へ' : '⬇ 闇の洞窟へ',
+        dungeon2: this.mapId === 'dungeon3' ? '⬆ 地下2階へ' : '⬇ 地下2階へ',
+        dungeon3: '⬇ 地下3階へ',
+      };
       const text = MAP_TEXT[exit.targetMap] ?? `→ ${exit.targetMap}`;
       const label = document.createElement('div');
       label.style.cssText = `
@@ -837,6 +854,10 @@ export class WorldScreen {
                       [tx+1, ty  ];
     const npc = getMapDef(this.mapId).npcs.find(n=>n.tileX===fx&&n.tileY===fy);
     if (npc) {
+      if (npc.isChest) {
+        this.showChestDialog(npc);
+        return;
+      }
       if (npc.shopType) {
         this.showShopDialog(npc);
         return;
@@ -1135,6 +1156,30 @@ export class WorldScreen {
     box.appendChild(cancelBtn);
     overlay.appendChild(box);
     this.uiRoot.appendChild(overlay);
+  }
+
+  // ─── 宝箱ダイアログ ──────────────────────────────────────────────────────────
+
+  private showChestDialog(npc: NpcDef) {
+    const flagKey = `chest_${npc.id}`;
+    if (this.save.flags[flagKey]) {
+      this.showDialogue('宝箱', ['この宝箱はもう空だ…']);
+      return;
+    }
+    const pool = npc.chestPool ?? ['herb'];
+    const itemId = pool[Math.floor(Math.random() * pool.length)];
+    const item = ITEM_MAP[itemId];
+    if (!item) {
+      this.showDialogue('宝箱', ['宝箱の中は空だった…']);
+      return;
+    }
+    const ex = this.save.inventory.find(e => e.itemId === itemId);
+    if (ex) ex.qty++;
+    else this.save.inventory.push({ itemId, qty: 1 });
+    this.save.flags[flagKey] = true;
+    writeSave(this.save);
+    this.hudEl.update(this.save, getMapDef(this.mapId).name);
+    this.showDialogue('✨ 宝箱', [`${item.name}を手に入れた！`]);
   }
 
   private startHosting() {
