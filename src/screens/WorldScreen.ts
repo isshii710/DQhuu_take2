@@ -23,6 +23,8 @@ interface FieldEnemy {
   visZ: number;     // visual world Z (interpolated)
   enemyIds: string[];
   spriteKey: string;
+  moveTimer: number;       // ms until next move
+  moveInterval: number;    // randomised interval for this enemy
 }
 
 const MAP_FLAGS: Partial<Record<MapId, string>> = {
@@ -79,7 +81,6 @@ export class WorldScreen {
   private roomCodeOverlay: HTMLElement | null = null;
 
   private fieldEnemies: FieldEnemy[] = [];
-  private fieldEnemyTimer = 0;
   private preBattleMapId: MapId | null = null;
 
   private pendingClassPick: { def: PartyMemberDef } | null = null;
@@ -225,7 +226,6 @@ export class WorldScreen {
       if (mapDef.encounterGroup && this.mapId !== 'dungeon') this.spawnFieldEnemies();
     }
     this.preBattleMapId = null;
-    this.fieldEnemyTimer = 0;
 
     // Minimap
     this.minimapCvs?.remove();
@@ -275,21 +275,23 @@ export class WorldScreen {
   };
 
   private update(delta: number) {
-    // Field enemy movement
-    this.fieldEnemyTimer += delta;
-    if (this.fieldEnemyTimer > 1800) {
-      this.fieldEnemyTimer = 0;
-      this.moveFieldEnemies();
-      this.drawMinimap();
-    }
-
-    // Smooth field enemy visual interpolation
+    // Per-enemy individual movement timers + smooth visual interpolation
+    let anyMoved = false;
     for (const fe of this.fieldEnemies) {
-      const alpha = Math.min(1, delta * 0.007);
+      // Individual move tick
+      fe.moveTimer -= delta;
+      if (fe.moveTimer <= 0) {
+        fe.moveTimer = fe.moveInterval + Math.random() * 400;
+        this.moveSingleEnemy(fe);
+        anyMoved = true;
+      }
+      // Lerp visual position toward logical tile
+      const alpha = Math.min(1, delta * 0.008);
       fe.visX += (fe.tileX + 0.5 - fe.visX) * alpha;
       fe.visZ += (fe.tileY + 0.5 - fe.visZ) * alpha;
       this.renderer.setFieldEnemyWorldPos(fe.id, fe.visX, fe.visZ);
     }
+    if (anyMoved) this.drawMinimap();
 
     // Shop label projection
     for (const sl of this.shopLabels) {
@@ -526,45 +528,42 @@ export class WorldScreen {
       const groupPick = groups[Math.floor(Math.random() * groups.length)];
       const spriteKey = ENEMY_MAP[groupPick[0]]?.sprite ?? 'slime';
       const id = `fe_${Date.now()}_${i}`;
-      this.fieldEnemies.push({ id, tileX: pos.x, tileY: pos.y, visX: pos.x + 0.5, visZ: pos.y + 0.5, enemyIds: groupPick, spriteKey });
+      const interval = 700 + Math.random() * 1000; // 700–1700ms, different per enemy
+      this.fieldEnemies.push({ id, tileX: pos.x, tileY: pos.y, visX: pos.x + 0.5, visZ: pos.y + 0.5, enemyIds: groupPick, spriteKey, moveTimer: Math.random() * interval, moveInterval: interval });
       this.renderer.addFieldEnemy(id, getEnemyTexture(spriteKey), pos.x, pos.y);
     }
   }
 
-  private moveFieldEnemies() {
-    if (this.moving || this.dialogOpen) return;
+  private moveSingleEnemy(fe: FieldEnemy) {
+    if (this.dialogOpen) return;
     const mapDef = getMapDef(this.mapId);
     const tiles = mapDef.tiles;
     const rows = tiles.length;
     const cols = tiles[0]?.length ?? 0;
     const px = this.save.position.tileX;
     const py = this.save.position.tileY;
+    const dist = Math.abs(fe.tileX - px) + Math.abs(fe.tileY - py);
 
-    for (const fe of this.fieldEnemies) {
-      const dist = Math.abs(fe.tileX - px) + Math.abs(fe.tileY - py);
+    let dirs: {dx: number; dy: number}[];
+    if (dist <= 5 && dist > 1) {
+      // Chase player
+      const sdx = Math.sign(px - fe.tileX);
+      const sdy = Math.sign(py - fe.tileY);
+      dirs = [{dx:sdx,dy:0},{dx:0,dy:sdy},{dx:-sdx,dy:0},{dx:0,dy:-sdy}].filter(d => d.dx!==0||d.dy!==0);
+    } else {
+      dirs = [{dx:0,dy:1},{dx:0,dy:-1},{dx:1,dy:0},{dx:-1,dy:0}];
+      dirs.sort(() => Math.random() - 0.5);
+    }
 
-      let dirs: {dx: number; dy: number}[];
-      if (dist <= 5 && dist > 1) {
-        // Chase player
-        const sdx = Math.sign(px - fe.tileX);
-        const sdy = Math.sign(py - fe.tileY);
-        dirs = [{dx:sdx,dy:0},{dx:0,dy:sdy},{dx:-sdx,dy:0},{dx:0,dy:-sdy}].filter(d => d.dx!==0||d.dy!==0);
-      } else {
-        dirs = [{dx:0,dy:1},{dx:0,dy:-1},{dx:1,dy:0},{dx:-1,dy:0}];
-        dirs.sort(() => Math.random() - 0.5);
-      }
-
-      for (const d of dirs) {
-        const nx = fe.tileX + d.dx;
-        const ny = fe.tileY + d.dy;
-        if (nx < 0 || ny < 0 || ny >= rows || nx >= cols) continue;
-        if (!ENCOUNTER_TILES.has(tiles[ny][nx])) continue;
-        if (this.fieldEnemies.some(e => e !== fe && e.tileX === nx && e.tileY === ny)) continue;
-        fe.tileX = nx;
-        fe.tileY = ny;
-        // Visual position follows via lerp in update(); do NOT call renderer.moveFieldEnemy()
-        break;
-      }
+    for (const d of dirs) {
+      const nx = fe.tileX + d.dx;
+      const ny = fe.tileY + d.dy;
+      if (nx < 0 || ny < 0 || ny >= rows || nx >= cols) continue;
+      if (!ENCOUNTER_TILES.has(tiles[ny][nx])) continue;
+      if (this.fieldEnemies.some(e => e !== fe && e.tileX === nx && e.tileY === ny)) continue;
+      fe.tileX = nx;
+      fe.tileY = ny;
+      break;
     }
   }
 
