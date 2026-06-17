@@ -6,7 +6,6 @@ import { BillboardSprite } from './BillboardSprite';
 
 const TILE = 1;          // 1 Three.js unit = 1 tile
 const SPRITE_Y = 0.52;  // height of sprite above ground
-
 // ─── 3D object color palette ─────────────────────────────────────────────────
 const MAT: Record<string, THREE.MeshLambertMaterial> = {};
 
@@ -97,6 +96,8 @@ export class WorldRenderer {
   readonly renderer: THREE.WebGLRenderer;
 
   private mapGroup = new THREE.Group();
+  private exitMarkers = new THREE.Group();
+  private exitMaterials: THREE.MeshBasicMaterial[] = [];
   private playerSprite: BillboardSprite | null = null;
   private npcSprites = new Map<string, BillboardSprite>();
   private otherPlayerSprites = new Map<string, BillboardSprite>();
@@ -134,6 +135,7 @@ export class WorldRenderer {
     this.scene.add(ambient, sun);
 
     this.scene.add(this.mapGroup);
+    this.scene.add(this.exitMarkers);
 
     // Handle resize
     this.onResize();
@@ -196,6 +198,18 @@ export class WorldRenderer {
 
     // NPCs
     mapDef.npcs.forEach(npc => this.addNpc(npc));
+
+    // Exit markers — glowing cyan ring on the ground
+    this.exitMarkers.clear();
+    this.exitMaterials = [];
+    mapDef.exits.forEach(exit => {
+      const mat = new THREE.MeshBasicMaterial({ color: 0x00DDFF, side: THREE.DoubleSide, transparent: true, opacity: 0.75 });
+      this.exitMaterials.push(mat);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.46, 20), mat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(exit.tileX + 0.5, 0.02, exit.tileY + 0.5);
+      this.exitMarkers.add(ring);
+    });
   }
 
   private buildGroundCanvas(tiles: number[][], cols: number, rows: number): HTMLCanvasElement {
@@ -332,6 +346,13 @@ export class WorldRenderer {
     const z = this.currentCamZ;
     this.camera.position.set(x, this.CAM_H, z + this.CAM_Z_OFFSET);
     this.camera.lookAt(x, 0, z);
+
+    // Pulse exit ring opacity and slow rotation
+    const pulse = Math.sin(Date.now() * 0.0028) * 0.3 + 0.7;
+    this.exitMaterials.forEach(mat => { mat.opacity = pulse; });
+    this.exitMarkers.children.forEach((c, i) => {
+      (c as THREE.Mesh).rotation.z += delta * 0.0012 * (i % 2 === 0 ? 1 : -1);
+    });
   }
 
   render() {
