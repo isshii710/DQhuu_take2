@@ -1,4 +1,5 @@
 import type { CharacterSave, MapId, Direction, NpcDef } from '../types';
+import type { PartyMemberDef } from '../data/partyMembers';
 import { TILE_SIZE, WALKABLE, ENCOUNTER_TILES, ENCOUNTER_RATE } from '../config';
 import { getMapDef } from '../data/maps';
 import { writeSave } from '../systems/SaveSystem';
@@ -12,11 +13,14 @@ import { HUD } from '../ui/HUD';
 import { VirtualJoystick } from '../ui/VirtualJoystick';
 import { getPartyMemberDef } from '../data/partyMembers';
 import { isRecruited, isRecruitable, recruitMember } from '../systems/PartySystem';
+import { getClassDef, calcStats } from '../data/characters';
 
 interface FieldEnemy {
   id: string;
   tileX: number;
   tileY: number;
+  visX: number;     // visual world X (interpolated)
+  visZ: number;     // visual world Z (interpolated)
   enemyIds: string[];
   spriteKey: string;
 }
@@ -77,6 +81,13 @@ export class WorldScreen {
   private fieldEnemies: FieldEnemy[] = [];
   private fieldEnemyTimer = 0;
   private preBattleMapId: MapId | null = null;
+
+  private pendingClassPick: { def: PartyMemberDef } | null = null;
+
+  private minimapCvs: HTMLCanvasElement | null = null;
+  private minimapCtx: CanvasRenderingContext2D | null = null;
+
+  private shopLabels: Array<{ el: HTMLElement; worldX: number; worldZ: number }> = [];
 
   private onBattle!: (opts: BattleOpts) => void;
   private onMenu!:   (save: CharacterSave, onClose: (s: CharacterSave)=>void) => void;
@@ -205,6 +216,8 @@ export class WorldScreen {
     const sameMapReturn = opts.fromBattle && this.preBattleMapId === this.mapId;
     if (sameMapReturn) {
       for (const fe of this.fieldEnemies) {
+        fe.visX = fe.tileX + 0.5;
+        fe.visZ = fe.tileY + 0.5;
         this.renderer.addFieldEnemy(fe.id, getEnemyTexture(fe.spriteKey), fe.tileX, fe.tileY);
       }
     } else {
@@ -213,6 +226,18 @@ export class WorldScreen {
     }
     this.preBattleMapId = null;
     this.fieldEnemyTimer = 0;
+
+    // Minimap
+    this.minimapCvs?.remove();
+    this.minimapCvs = document.createElement('canvas');
+    this.minimapCvs.width = 80; this.minimapCvs.height = 80;
+    this.minimapCvs.style.cssText = 'position:absolute;top:8px;right:8px;width:80px;height:80px;border:1px solid rgba(212,175,55,0.5);border-radius:4px;image-rendering:pixelated;pointer-events:none;z-index:5;opacity:0.85;';
+    this.uiRoot.appendChild(this.minimapCvs);
+    this.minimapCtx = this.minimapCvs.getContext('2d')!;
+    this.drawMinimap();
+
+    // Shop labels
+    this.buildShopLabels();
 
     this.uiRoot.style.display = 'block';
     this.hudEl.show();
@@ -255,6 +280,27 @@ export class WorldScreen {
     if (this.fieldEnemyTimer > 1800) {
       this.fieldEnemyTimer = 0;
       this.moveFieldEnemies();
+      this.drawMinimap();
+    }
+
+    // Smooth field enemy visual interpolation
+    for (const fe of this.fieldEnemies) {
+      const alpha = Math.min(1, delta * 0.007);
+      fe.visX += (fe.tileX + 0.5 - fe.visX) * alpha;
+      fe.visZ += (fe.tileY + 0.5 - fe.visZ) * alpha;
+      this.renderer.setFieldEnemyWorldPos(fe.id, fe.visX, fe.visZ);
+    }
+
+    // Shop label projection
+    for (const sl of this.shopLabels) {
+      const s = this.renderer.projectToScreen(sl.worldX, sl.worldZ);
+      if (s) {
+        sl.el.style.display = 'block';
+        sl.el.style.left = (s.x - sl.el.offsetWidth / 2) + 'px';
+        sl.el.style.top = (s.y - 50) + 'px'; // above the NPC
+      } else {
+        sl.el.style.display = 'none';
+      }
     }
 
     // Walk animation
@@ -373,6 +419,7 @@ export class WorldScreen {
       }
       // Random encounters only in dungeon
       if (this.mapId === 'dungeon') this.checkEncounter(tileId);
+      this.drawMinimap();
       writeSave(this.save);
       if (this.isMultiplayer) {
         mpManager.movePlayer(nx, ny, this.mapId, this.faceDir(dir));
@@ -400,6 +447,18 @@ export class WorldScreen {
     );
 
     if (mapDef.encounterGroup && targetMap !== 'dungeon') this.spawnFieldEnemies();
+
+    // Minimap for new map
+    this.minimapCvs?.remove();
+    this.minimapCvs = document.createElement('canvas');
+    this.minimapCvs.width = 80; this.minimapCvs.height = 80;
+    this.minimapCvs.style.cssText = 'position:absolute;top:8px;right:8px;width:80px;height:80px;border:1px solid rgba(212,175,55,0.5);border-radius:4px;image-rendering:pixelated;pointer-events:none;z-index:5;opacity:0.85;';
+    this.uiRoot.appendChild(this.minimapCvs);
+    this.minimapCtx = this.minimapCvs.getContext('2d')!;
+    this.drawMinimap();
+
+    // Shop labels for new map
+    this.buildShopLabels();
 
     this.hudEl.update(this.save, mapDef.name);
     this.hudEl.showMapBanner(mapDef.name);
@@ -467,7 +526,7 @@ export class WorldScreen {
       const groupPick = groups[Math.floor(Math.random() * groups.length)];
       const spriteKey = ENEMY_MAP[groupPick[0]]?.sprite ?? 'slime';
       const id = `fe_${Date.now()}_${i}`;
-      this.fieldEnemies.push({ id, tileX: pos.x, tileY: pos.y, enemyIds: groupPick, spriteKey });
+      this.fieldEnemies.push({ id, tileX: pos.x, tileY: pos.y, visX: pos.x + 0.5, visZ: pos.y + 0.5, enemyIds: groupPick, spriteKey });
       this.renderer.addFieldEnemy(id, getEnemyTexture(spriteKey), pos.x, pos.y);
     }
   }
@@ -503,7 +562,7 @@ export class WorldScreen {
         if (this.fieldEnemies.some(e => e !== fe && e.tileX === nx && e.tileY === ny)) continue;
         fe.tileX = nx;
         fe.tileY = ny;
-        this.renderer.moveFieldEnemy(fe.id, nx, ny);
+        // Visual position follows via lerp in update(); do NOT call renderer.moveFieldEnemy()
         break;
       }
     }
@@ -514,6 +573,75 @@ export class WorldScreen {
     if (idx >= 0) {
       this.renderer.removeFieldEnemy(id);
       this.fieldEnemies.splice(idx, 1);
+    }
+  }
+
+  // ─── Minimap ───────────────────────────────────────────────────────────────
+
+  private drawMinimap() {
+    const ctx = this.minimapCtx; if (!ctx || !this.minimapCvs) return;
+    const mapDef = getMapDef(this.mapId);
+    const tiles = mapDef.tiles;
+    const rows = tiles.length; const cols = tiles[0]?.length ?? 0;
+    const sw = 80 / cols; const sh = 80 / rows;
+    ctx.clearRect(0, 0, 80, 80);
+    // Tile colors
+    const TC: Record<number, string> = { 0:'#4CAF50',1:'#1565C0',2:'#555',3:'#8D6E63',4:'#2E7D32',5:'#F9A825',6:'#8D5',7:'#90A4AE',8:'#111',9:'#33691E',10:'#37474F',11:'#BCAAA4',12:'#5D4037',13:'#FFD700' };
+    for (let ty=0;ty<rows;ty++) for (let tx=0;tx<cols;tx++) {
+      ctx.fillStyle = TC[tiles[ty][tx]] ?? '#222';
+      ctx.fillRect(tx*sw, ty*sh, Math.max(1,sw), Math.max(1,sh));
+    }
+    // Exits (cyan)
+    ctx.fillStyle = '#00FFFF';
+    for (const ex of mapDef.exits) ctx.fillRect(ex.tileX*sw-1, ex.tileY*sh-1, Math.max(2,sw+2), Math.max(2,sh+2));
+    // Field enemies (red dot)
+    ctx.fillStyle = '#FF3333';
+    for (const fe of this.fieldEnemies) ctx.fillRect(fe.tileX*sw-1, fe.tileY*sh-1, Math.max(2,sw+1), Math.max(2,sh+1));
+    // NPCs (yellow)
+    ctx.fillStyle = '#FFD700';
+    for (const npc of mapDef.npcs) ctx.fillRect(npc.tileX*sw-1, npc.tileY*sh-1, Math.max(2,sw+1), Math.max(2,sh+1));
+    // Player (white, larger)
+    const px = this.save.position.tileX; const py = this.save.position.tileY;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(px*sw-2, py*sh-2, Math.max(4,sw+3), Math.max(4,sh+3));
+    // Border
+    ctx.strokeStyle = 'rgba(212,175,55,0.4)'; ctx.lineWidth = 1; ctx.strokeRect(0.5,0.5,79,79);
+  }
+
+  // ─── Shop labels ───────────────────────────────────────────────────────────
+
+  private buildShopLabels() {
+    // Remove old shop labels
+    for (const sl of this.shopLabels) sl.el.remove();
+    this.shopLabels = [];
+
+    const mapDef = getMapDef(this.mapId);
+    for (const npc of mapDef.npcs) {
+      if (!npc.shopType && !npc.isInn) continue;
+
+      let text = '';
+      let borderColor = 'rgba(212,175,55,0.6)';
+      if (npc.isInn) {
+        text = '🏨 宿屋';
+        borderColor = 'rgba(100,180,255,0.6)';
+      } else if (npc.shopType === 'weapon') {
+        text = '⚔ 武器屋';
+        borderColor = 'rgba(255,120,80,0.6)';
+      } else if (npc.shopType === 'armor') {
+        text = '🛡 防具屋';
+        borderColor = 'rgba(120,200,120,0.6)';
+      } else if (npc.shopType === 'item') {
+        text = '🌿 道具屋';
+        borderColor = 'rgba(180,255,120,0.6)';
+      } else {
+        continue;
+      }
+
+      const el = document.createElement('div');
+      el.style.cssText = `position:absolute;pointer-events:none;z-index:6;white-space:nowrap;font-size:11px;font-weight:bold;font-family:${FONT};background:rgba(10,10,30,0.82);border:1px solid ${borderColor};border-radius:4px;padding:2px 6px;color:#FFFDE7;display:none;`;
+      el.textContent = text;
+      this.uiRoot.appendChild(el);
+      this.shopLabels.push({ el, worldX: npc.tileX + 0.5, worldZ: npc.tileY + 0.5 });
     }
   }
 
@@ -541,7 +669,89 @@ export class WorldScreen {
     } else {
       this.dialogEl.style.display = 'none';
       this.dialogOpen = false;
+      if (this.pendingClassPick) {
+        const pick = this.pendingClassPick;
+        this.pendingClassPick = null;
+        this.showClassPickDialog(pick.def);
+      }
     }
+  }
+
+  private showClassPickDialog(def: PartyMemberDef) {
+    this.dialogOpen = true;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      background:rgba(0,0,0,0.65);pointer-events:auto;z-index:20;
+    `;
+
+    const box = document.createElement('div');
+    box.style.cssText = `
+      background:rgba(10,10,30,0.97);border:2px solid rgba(212,175,55,0.7);
+      border-radius:8px;padding:20px 22px;width:280px;
+      font-family:${FONT};
+    `;
+
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#FFD700;font-size:15px;font-weight:bold;margin-bottom:6px;text-align:center;';
+    title.textContent = `${def.name}の職業を選んでください`;
+
+    const subtitle = document.createElement('div');
+    subtitle.style.cssText = 'color:#AAAACC;font-size:11px;margin-bottom:14px;text-align:center;';
+    subtitle.textContent = '仲間の職業を決めると後から変更できません';
+
+    box.appendChild(title);
+    box.appendChild(subtitle);
+
+    const classes: Array<{ name: string; desc: string }> = [
+      { name: '戦士',   desc: 'HP・攻撃力が高い前衛タイプ' },
+      { name: '魔法使い', desc: '強力な攻撃魔法を使える' },
+      { name: '回復師',  desc: '仲間を回復して支援する' },
+      { name: '盗賊',   desc: '素早く攻撃・スピードが高い' },
+    ];
+
+    for (const cls of classes) {
+      const btn = document.createElement('button');
+      btn.style.cssText = `
+        display:block;width:100%;padding:8px 12px;margin-bottom:8px;
+        background:rgba(26,26,46,0.9);
+        border:1px solid rgba(212,175,55,0.4);border-radius:4px;
+        text-align:left;cursor:pointer;pointer-events:auto;
+      `;
+
+      const clsName = document.createElement('div');
+      clsName.style.cssText = 'color:#FFD700;font-size:14px;font-weight:bold;font-family:' + FONT + ';';
+      clsName.textContent = cls.name;
+
+      const clsDesc = document.createElement('div');
+      clsDesc.style.cssText = 'color:#888899;font-size:11px;font-family:' + FONT + ';margin-top:2px;';
+      clsDesc.textContent = cls.desc;
+
+      btn.appendChild(clsName);
+      btn.appendChild(clsDesc);
+
+      btn.addEventListener('click', () => {
+        const chosenClass = cls.name as import('../types').ClassName;
+        recruitMember(this.save, def.id);
+        const member = this.save.party.find(p => p.id === def.id);
+        if (member) {
+          const classDef = getClassDef(chosenClass);
+          const s = calcStats(classDef, member.level);
+          member.className = chosenClass;
+          member.stats = { hp: s.maxHp, maxHp: s.maxHp, mp: s.maxMp, maxMp: s.maxMp, atk: s.atk, def: s.def, mag: s.mag, spd: s.spd };
+        }
+        writeSave(this.save);
+        overlay.remove();
+        this.dialogOpen = false;
+        this.showDialogue(def.name, [`${def.name}は${cls.name}として仲間になった！`]);
+      });
+
+      box.appendChild(btn);
+    }
+
+    overlay.appendChild(box);
+    this.uiRoot.appendChild(overlay);
   }
 
   private onActionButton() {
@@ -572,9 +782,8 @@ export class WorldScreen {
     if (isRecruited(this.save, def.id)) {
       this.showDialogue(npc.name, def.postJoinDialogue);
     } else if (isRecruitable(this.save, def.id)) {
-      recruitMember(this.save, def.id);
-      writeSave(this.save);
       this.showDialogue(def.name, def.joinDialogue);
+      this.pendingClassPick = { def };
     } else {
       this.showDialogue(npc.name, def.preJoinDialogue);
     }

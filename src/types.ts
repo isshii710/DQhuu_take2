@@ -141,6 +141,7 @@ export interface NpcDef {
   spriteColor: number;
   recruitId?: string;
   isInn?: boolean;
+  shopType?: 'weapon' | 'armor' | 'item';
 }
 
 export interface MapDef {

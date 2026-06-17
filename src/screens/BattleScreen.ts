@@ -48,6 +48,17 @@ export class BattleScreen {
   private onEnd!: (save: CharacterSave, mapId: string) => void;
   private timers: ReturnType<typeof setTimeout>[] = [];
 
+  // ─── Party command state ─────────────────────────────────────────────────────
+  private commandActors: Combatant[] = [];
+  private commandActorIndex = 0;
+  private pendingActions: Array<{
+    actor: Combatant;
+    type: 'attack' | 'magic' | 'item' | 'run';
+    spellName?: string;
+    itemId?: string;
+    targetIndex: number;
+  }> = [];
+
   constructor(container: HTMLElement) {
     this.root = el('div', `
       position:absolute;inset:0;
@@ -294,20 +305,62 @@ export class BattleScreen {
   private playIntro() {
     const names = this.enemies.map(e=>e.name).join('と');
     this.log(`${names}が\n現れた！`);
-    this.delay(1400, () => {
-      this.phase = 'command';
-      this.log('コマンドを選んでください');
-      this.buildCommandMenu();
-    });
+    this.delay(1400, () => this.startCommandPhase());
+  }
+
+  // ─── Command phase ───────────────────────────────────────────────────────────
+
+  private startCommandPhase() {
+    this.commandActors = [this.playerC, ...this.companionCs.filter(c => c.hp > 0)];
+    this.commandActorIndex = 0;
+    this.pendingActions = [];
+    this.phase = 'command';
+    this.log('コマンドを選んでください');
+    this.buildCommandMenu();
   }
 
   // ─── Command menu ────────────────────────────────────────────────────────────
 
   private buildCommandMenu() {
     this.commandEl.innerHTML = '';
-    const cmds = [['⚔ 攻撃','attack'],['✨ 魔法','magic'],['💊 アイテム','item'],['🏃 逃げる','run']] as const;
+
+    const actor = this.commandActors[this.commandActorIndex];
+    const isHero = actor.id === this.playerC.id;
+
+    // Actor name + HP/MP header (yellow)
+    const header = el('div', `
+      color:#FFD700;font-size:12px;font-family:${FONT};
+      margin-bottom:4px;padding:3px 6px;
+      background:rgba(255,215,0,0.08);border-radius:3px;
+    `);
+    const actorMp = actor.mp !== undefined ? ` MP:${actor.mp}` : '';
+    header.textContent = `${actor.name}  HP:${actor.hp}/${actor.maxHp}${actorMp}`;
+    this.commandEl.appendChild(header);
+
+    // Progress indicator: dots per actor (green=done, gold=current, dark=pending)
+    if (this.commandActors.length > 1) {
+      const dots = el('div', 'display:flex;gap:5px;margin-bottom:5px;align-items:center;');
+      this.commandActors.forEach((_a, idx) => {
+        const dot = el('div', 'width:8px;height:8px;border-radius:50%;display:inline-block;');
+        if (idx < this.commandActorIndex) {
+          dot.style.background = '#44FF88'; // done = green
+        } else if (idx === this.commandActorIndex) {
+          dot.style.background = '#FFD700'; // current = gold
+        } else {
+          dot.style.background = '#333355'; // pending = dark
+        }
+        dots.appendChild(dot);
+      });
+      this.commandEl.appendChild(dots);
+    }
+
+    // Command buttons: hero gets all 4, companions get only 攻撃 and 魔法
+    const cmds: Array<[string, 'attack'|'magic'|'item'|'run']> = isHero
+      ? [['⚔ 攻撃','attack'],['✨ 魔法','magic'],['💊 アイテム','item'],['🏃 逃げる','run']]
+      : [['⚔ 攻撃','attack'],['✨ 魔法','magic']];
+
     const grid = el('div','display:grid;grid-template-columns:1fr 1fr;gap:6px;');
-    cmds.forEach(([label,type]) => {
+    cmds.forEach(([label, type]) => {
       const b = document.createElement('button');
       b.textContent = label;
       b.style.cssText = `
@@ -318,10 +371,10 @@ export class BattleScreen {
       `;
       b.addEventListener('click', () => {
         if (this.phase !== 'command') return;
-        if (type==='attack') this.executeAction('attack');
-        else if (type==='magic')  this.buildSkillMenu();
-        else if (type==='item')   this.buildItemMenu();
-        else if (type==='run')    this.executeAction('run');
+        if (type === 'attack') this.chooseAction('attack');
+        else if (type === 'magic') this.buildSkillMenu(actor);
+        else if (type === 'item') this.buildItemMenu();
+        else if (type === 'run') this.chooseAction('run');
       });
       grid.appendChild(b);
     });
@@ -329,10 +382,24 @@ export class BattleScreen {
     this.updateTargetHighlight();
   }
 
-  private buildSkillMenu() {
+  private buildSkillMenu(actor: Combatant) {
     this.commandEl.innerHTML = '';
-    const cls = getClassDef(this.save.className);
-    const skills = cls.skills.filter(s => s.level <= this.save.level);
+
+    // Determine class and level for this actor (hero vs companion)
+    let className: string;
+    let actorLevel: number;
+    if (actor.id === this.playerC.id) {
+      className = this.save.className;
+      actorLevel = this.save.level;
+    } else {
+      const memberId = actor.id.replace('party_', '');
+      const member = this.save.party.find(p => p.id === memberId);
+      className = member?.className ?? '戦士';
+      actorLevel = member?.level ?? 1;
+    }
+
+    const cls = getClassDef(className);
+    const skills = cls.skills.filter(s => s.level <= actorLevel);
     if (!skills.length) {
       this.log('まだ使える魔法がない！');
       this.delay(1000, () => { this.log('コマンドを選んでください'); this.buildCommandMenu(); });
@@ -349,8 +416,8 @@ export class BattleScreen {
       b.textContent=`${s.name}  MP${s.mpCost}`;
       b.style.cssText=`padding:6px 8px;background:rgba(16,16,30,0.9);color:#FFFDE7;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;text-align:left;`;
       b.addEventListener('click', () => {
-        if (this.playerC.mp < s.mpCost) { this.log('MPが足りない！'); return; }
-        this.executeAction('magic', s.name);
+        if (actor.mp < s.mpCost) { this.log('MPが足りない！'); return; }
+        this.chooseAction('magic', s.name);
       });
       list.appendChild(b);
     });
@@ -375,55 +442,140 @@ export class BattleScreen {
         const b=document.createElement('button');
         b.textContent=`${entry.itemId} ×${entry.qty}`;
         b.style.cssText=`padding:6px 8px;background:rgba(16,16,30,0.9);color:#FFFDE7;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;text-align:left;`;
-        b.addEventListener('click',()=>this.executeAction('item',undefined,entry.itemId));
+        b.addEventListener('click',()=>this.chooseAction('item',undefined,entry.itemId));
         list.appendChild(b);
       });
     }
     this.commandEl.appendChild(list);
   }
 
-  // ─── Battle logic ───────────────────────────────────────────────────────────
+  // ─── Party command input ─────────────────────────────────────────────────────
 
-  private executeAction(type: 'attack'|'magic'|'item'|'run', spellName?: string, itemId?: string) {
+  private chooseAction(type: 'attack'|'magic'|'item'|'run', spellName?: string, itemId?: string) {
     if (this.phase !== 'command') return;
+
+    this.pendingActions.push({
+      actor: this.commandActors[this.commandActorIndex],
+      type,
+      spellName,
+      itemId,
+      targetIndex: this.selectedEnemy,
+    });
+
+    this.commandActorIndex++;
+
+    if (this.commandActorIndex < this.commandActors.length) {
+      // More actors to command — rebuild for next actor
+      this.buildCommandMenu();
+    } else {
+      // All actors have chosen — execute
+      this.executeAllActions();
+    }
+  }
+
+  // ─── Execute all pending actions ─────────────────────────────────────────────
+
+  private executeAllActions() {
     this.phase = 'executing';
     this.commandEl.innerHTML = '';
 
     if (this.isMultiplayer) {
-      mpManager.submitAction({ type, targetIndex: this.selectedEnemy, spellId: spellName, itemId });
-      this.log('行動を送信中…');
+      // Hero-only multiplayer path unchanged
+      const heroAction = this.pendingActions.find(a => a.actor.id === this.playerC.id);
+      if (heroAction) {
+        mpManager.submitAction({
+          type: heroAction.type,
+          targetIndex: heroAction.targetIndex,
+          spellId: heroAction.spellName,
+          itemId: heroAction.itemId,
+        });
+        this.log('行動を送信中…');
+      }
       return;
     }
 
-    const target = this.enemyCs[this.selectedEnemy];
-    const action = { actorId: this.playerC.id, type, targetId: target?.id, spellName, itemId };
+    let d = 0;
+    this.pendingActions.forEach(action => {
+      this.delay(d, () => this.executeSingleAction(action));
+      d += 900;
+    });
+
+    this.delay(d, () => {
+      if (this.enemyCs.every(e => e.hp <= 0)) {
+        this.doVictory();
+      } else {
+        this.doEnemyTurns();
+      }
+    });
+  }
+
+  private executeSingleAction(action: {
+    actor: Combatant;
+    type: 'attack'|'magic'|'item'|'run';
+    spellName?: string;
+    itemId?: string;
+    targetIndex: number;
+  }) {
+    // Skip if all enemies already dead
+    if (this.enemyCs.every(e => e.hp <= 0)) return;
+
+    // Find living target (fallback to first living enemy if selected is dead)
+    let targetIdx = action.targetIndex;
+    if (!this.enemyCs[targetIdx] || this.enemyCs[targetIdx].hp <= 0) {
+      targetIdx = this.enemyCs.findIndex(e => e.hp > 0);
+      if (targetIdx < 0) return; // no enemies alive
+    }
+
+    const target = this.enemyCs[targetIdx];
+    const battleAction = {
+      actorId: action.actor.id,
+      type: action.type,
+      targetId: target?.id,
+      spellName: action.spellName,
+      itemId: action.itemId,
+    };
+
+    if (action.type === 'run') {
+      const result = resolveAction(action.actor, battleAction, target ?? action.actor);
+      this.log(result.text);
+      this.delay(800, () => this.finish(false, true));
+      return;
+    }
+
+    const isHero = action.actor.id === this.playerC.id;
 
     const doResolve = () => {
-      const result = resolveAction(this.playerC, action, target ?? this.playerC);
+      const result = resolveAction(action.actor, battleAction, target ?? action.actor);
       this.log(result.text);
-      if (result.damage) this.showDmg(this.selectedEnemy, result.damage, false);
-      this.refreshEnemyBar(this.selectedEnemy);
-      this.refreshPlayerBar();
+      if (result.damage) this.showDmg(targetIdx, result.damage, false);
+      this.refreshEnemyBar(targetIdx);
+      if (isHero) {
+        this.refreshPlayerBar();
+      } else {
+        const ci = this.companionCs.indexOf(action.actor);
+        if (ci >= 0) this.refreshCompanionBar(ci);
+      }
 
-      // Auto-switch target to next living enemy
+      // Auto-switch target if killed
       if (this.enemyCs[this.selectedEnemy]?.hp <= 0) {
         const next = this.enemyCs.findIndex(e => e.hp > 0);
         if (next >= 0) { this.selectedEnemy = next; this.updateTargetHighlight(); }
       }
-
-      if (type === 'run') { this.delay(800, () => this.finish(false, true)); return; }
-
-      this.delay(900, () => {
-        if (this.enemyCs.every(e => e.hp <= 0)) { this.doVictory(); return; }
-        this.doCompanionTurns(() => {
-          if (this.enemyCs.every(e => e.hp <= 0)) { this.doVictory(); return; }
-          this.doEnemyTurns();
-        });
-      });
     };
 
-    if ((type === 'attack' || type === 'magic') && target && target.hp > 0) {
-      this.animateStepIn(this.selectedEnemy, type === 'magic').then(doResolve);
+    if ((action.type === 'attack' || action.type === 'magic') && target && target.hp > 0) {
+      if (isHero) {
+        // Hero: use full step-in animation
+        this.animateStepIn(targetIdx, action.type === 'magic').then(doResolve);
+      } else {
+        // Companion: simple brightness flash on enemy panel, no marker movement
+        const panel = this.enemyPanels[targetIdx];
+        if (panel) {
+          panel.wrap.style.filter = 'brightness(2.5) saturate(0)';
+          setTimeout(() => { panel.wrap.style.filter = ''; }, 180);
+        }
+        doResolve();
+      }
     } else {
       doResolve();
     }
@@ -487,44 +639,6 @@ export class BattleScreen {
     });
   }
 
-  private doCompanionTurns(onDone: () => void) {
-    const livingCompanions = this.companionCs.filter(c => c.hp > 0);
-    if (!livingCompanions.length) { onDone(); return; }
-
-    let d = 0;
-    livingCompanions.forEach(comp => {
-      this.delay(d, () => {
-        const livingEnemies = this.enemyCs.filter(e => e.hp > 0);
-        if (!livingEnemies.length) return;
-        const target = livingEnemies[0];
-
-        // 30%の確率でスキルを使う
-        const cls = getClassDef(comp.isEnemy ? '戦士' : (() => {
-          // Find className from save
-          const m = this.save.party.find(p => `party_${p.id}` === comp.id);
-          return m ? m.className : '戦士';
-        })());
-        const availableSkills = cls.skills.filter(s => s.level <= (this.save.party.find(p => `party_${p.id}` === comp.id)?.level ?? 1));
-        const useSkill = availableSkills.length > 0 && Math.random() < 0.3 && comp.mp >= availableSkills[0].mpCost;
-
-        let result;
-        if (useSkill) {
-          const skill = availableSkills[0];
-          result = resolveAction(comp, { actorId: comp.id, type: 'magic', targetId: target.id, spellName: skill.name }, target);
-        } else {
-          result = resolveAction(comp, { actorId: comp.id, type: 'attack', targetId: target.id }, target);
-        }
-        this.log(result.text);
-        const ei = this.enemyCs.indexOf(target);
-        if (result.damage && ei >= 0) this.showDmg(ei, result.damage, false);
-        this.refreshEnemyBar(ei);
-      });
-      d += 650;
-    });
-
-    this.delay(d + 200, onDone);
-  }
-
   private doEnemyTurns() {
     const living = this.enemyCs.filter(e => e.hp > 0);
     const alliedTargets = [this.playerC, ...this.companionCs.filter(c => c.hp > 0)];
@@ -554,9 +668,7 @@ export class BattleScreen {
     });
     this.delay(d + 350, () => {
       if (this.playerC.hp <= 0) { this.doDefeat(); return; }
-      this.phase = 'command';
-      this.log('コマンドを選んでください');
-      this.buildCommandMenu();
+      this.startCommandPhase();
     });
   }
 
@@ -669,7 +781,7 @@ export class BattleScreen {
       padding:24px 28px;text-align:center;
       color:${color};font-size:16px;font-family:${FONT};
       white-space:pre-line;line-height:1.7;
-      pointer-events:none;
+      pointer-events:none;z-index:20;
     `);
     modal.textContent = msg;
     this.root.appendChild(modal);

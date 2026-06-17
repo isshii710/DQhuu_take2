@@ -267,6 +267,20 @@ export class WorldRenderer {
     this.fieldEnemySprites.get(id)?.setPosition(tileX + 0.5, SPRITE_Y, tileZ + 0.5);
   }
 
+  setFieldEnemyWorldPos(id: string, worldX: number, worldZ: number) {
+    this.fieldEnemySprites.get(id)?.setPosition(worldX, SPRITE_Y, worldZ);
+  }
+
+  projectToScreen(worldX: number, worldZ: number): { x: number; y: number } | null {
+    const v = new THREE.Vector3(worldX, 1.5, worldZ);
+    v.project(this.camera);
+    if (v.z > 1) return null;
+    return {
+      x: (v.x + 1) / 2 * window.innerWidth,
+      y: (-v.y + 1) / 2 * window.innerHeight,
+    };
+  }
+
   removeFieldEnemy(id: string) {
     const sp = this.fieldEnemySprites.get(id);
     if (!sp) return;
