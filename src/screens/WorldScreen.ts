@@ -1,4 +1,4 @@
-import type { CharacterSave, MapId, Direction } from '../types';
+import type { CharacterSave, MapId, Direction, NpcDef } from '../types';
 import { TILE_SIZE, WALKABLE, ENCOUNTER_TILES, ENCOUNTER_RATE } from '../config';
 import { getMapDef } from '../data/maps';
 import { writeSave } from '../systems/SaveSystem';
@@ -9,6 +9,15 @@ import { WorldRenderer } from '../renderer/WorldRenderer';
 import { BillboardSprite } from '../renderer/BillboardSprite';
 import { HUD } from '../ui/HUD';
 import { VirtualJoystick } from '../ui/VirtualJoystick';
+import { getPartyMemberDef } from '../data/partyMembers';
+import { isRecruited, isRecruitable, recruitMember } from '../systems/PartySystem';
+
+const MAP_FLAGS: Partial<Record<MapId, string>> = {
+  village: 'village_visited',
+  world: 'world_visited',
+  castle: 'castle_visited',
+  dungeon: 'dungeon_entered',
+};
 
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
 const MOVE_DURATION = 140; // ms per tile move
@@ -179,6 +188,10 @@ export class WorldScreen {
     this.hudEl.update(save, mapDef.name);
     this.hudEl.showMapBanner(mapDef.name);
 
+    // マップ訪問フラグを設定
+    const mapFlag = MAP_FLAGS[this.mapId];
+    if (mapFlag) save.flags[mapFlag] = true;
+
     if (this.isMultiplayer) this.setupMultiplayer();
 
     this.active = true;
@@ -272,7 +285,14 @@ export class WorldScreen {
 
     // Check NPC
     const npc = mapDef.npcs.find(n=>n.tileX===nx&&n.tileY===ny);
-    if (npc) { this.showDialogue(npc.name, npc.dialogue); return; }
+    if (npc) {
+      if (npc.recruitId) {
+        this.handleRecruitNpc(npc);
+      } else {
+        this.showDialogue(npc.name, npc.dialogue);
+      }
+      return;
+    }
 
     // Start move
     this.moving = true;
@@ -298,6 +318,11 @@ export class WorldScreen {
   private changeMap(targetMap: MapId, targetX: number, targetY: number) {
     this.save.position = { mapId: targetMap, tileX: targetX, tileY: targetY };
     this.mapId = targetMap;
+
+    // マップ訪問フラグを設定
+    const mapFlag = MAP_FLAGS[targetMap];
+    if (mapFlag) this.save.flags[mapFlag] = true;
+
     writeSave(this.save);
 
     const mapDef = getMapDef(targetMap);
@@ -372,7 +397,27 @@ export class WorldScreen {
       this.playerDir==='left'  ? [tx-1, ty  ] :
                                  [tx+1, ty  ];
     const npc = getMapDef(this.mapId).npcs.find(n=>n.tileX===fx&&n.tileY===fy);
-    if (npc) this.showDialogue(npc.name, npc.dialogue);
+    if (npc) {
+      if (npc.recruitId) {
+        this.handleRecruitNpc(npc);
+      } else {
+        this.showDialogue(npc.name, npc.dialogue);
+      }
+    }
+  }
+
+  private handleRecruitNpc(npc: NpcDef) {
+    const def = getPartyMemberDef(npc.recruitId!);
+    if (!def) { this.showDialogue(npc.name, npc.dialogue); return; }
+    if (isRecruited(this.save, def.id)) {
+      this.showDialogue(npc.name, def.postJoinDialogue);
+    } else if (isRecruitable(this.save, def.id)) {
+      recruitMember(this.save, def.id);
+      writeSave(this.save);
+      this.showDialogue(def.name, def.joinDialogue);
+    } else {
+      this.showDialogue(npc.name, def.preJoinDialogue);
+    }
   }
 
   private openMenu() {
