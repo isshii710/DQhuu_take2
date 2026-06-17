@@ -97,14 +97,19 @@ export function generatePlayerTextures(scene: Phaser.Scene) {
     }
     g.generateTexture(key, W, H);
     g.destroy();
+
+    // Register individual frames so setFrame(n) crops correctly
+    const tex = scene.textures.get(key);
+    for (let i = 0; i < DIRS * FRAMES; i++) {
+      tex.add(i, 0, i * FRAME_W, 0, FRAME_W, FRAME_H);
+    }
   }
 
-  // NPC generic texture (purple robe)
+  // NPC generic texture – single 32×32 frame (facing down)
   if (!scene.textures.exists('npc_base')) {
     const g = scene.add.graphics();
     heroFrame(g, 0, HAIR_BRN, 0x884422, 0, 0, 0);
-    heroFrame(g, FRAME_W, HAIR_BRN, 0x884422, 0, 1, 0);
-    g.generateTexture('npc_base', FRAME_W * 2, FRAME_H);
+    g.generateTexture('npc_base', FRAME_W, FRAME_H);
     g.destroy();
   }
 }
