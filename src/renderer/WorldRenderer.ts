@@ -100,6 +100,7 @@ export class WorldRenderer {
   private playerSprite: BillboardSprite | null = null;
   private npcSprites = new Map<string, BillboardSprite>();
   private otherPlayerSprites = new Map<string, BillboardSprite>();
+  private fieldEnemySprites = new Map<string, BillboardSprite>();
 
   private targetCamX = 0;
   private targetCamZ = 0;
@@ -159,6 +160,7 @@ export class WorldRenderer {
     this.mapGroup.clear();
     this.npcSprites.forEach(s => s.removeFrom(this.scene));
     this.npcSprites.clear();
+    this.clearFieldEnemies();
 
     const rows = mapDef.tiles.length;
     const cols = mapDef.tiles[0].length;
@@ -249,6 +251,32 @@ export class WorldRenderer {
     sp.setPosition(npc.tileX + 0.5, SPRITE_Y, npc.tileY + 0.5);
     sp.addTo(this.scene);
     this.npcSprites.set(npc.id, sp);
+  }
+
+  // ─── Field enemies ────────────────────────────────────────────────────────
+
+  addFieldEnemy(id: string, texture: THREE.Texture, tileX: number, tileZ: number) {
+    if (this.fieldEnemySprites.has(id)) return;
+    const sp = new BillboardSprite(texture, 1, 0.78);
+    sp.setPosition(tileX + 0.5, SPRITE_Y, tileZ + 0.5);
+    sp.addTo(this.scene);
+    this.fieldEnemySprites.set(id, sp);
+  }
+
+  moveFieldEnemy(id: string, tileX: number, tileZ: number) {
+    this.fieldEnemySprites.get(id)?.setPosition(tileX + 0.5, SPRITE_Y, tileZ + 0.5);
+  }
+
+  removeFieldEnemy(id: string) {
+    const sp = this.fieldEnemySprites.get(id);
+    if (!sp) return;
+    sp.removeFrom(this.scene);
+    this.fieldEnemySprites.delete(id);
+  }
+
+  clearFieldEnemies() {
+    this.fieldEnemySprites.forEach(sp => sp.removeFrom(this.scene));
+    this.fieldEnemySprites.clear();
   }
 
   // ─── Other players (multiplayer) ─────────────────────────────────────────
