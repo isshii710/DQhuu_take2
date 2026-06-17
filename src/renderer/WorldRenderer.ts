@@ -49,6 +49,25 @@ const WarmGradeShader = {
 
 const TILE = 1;          // 1 Three.js unit = 1 tile
 const SPRITE_Y = 0.52;  // height of sprite above ground
+
+// Per-tile terrain elevation (in Three.js units)
+const TILE_H: Partial<Record<number, number>> = {
+  1: -0.22,  // WATER  — depressed
+  0:  0.00,  // GRASS
+  4:  0.03,  // FOREST — slightly raised
+  3:  0.04,  // PATH   — compacted/raised
+  5:  0.05,  // SAND   — dune-like
+  6:  0.00,  // VILLAGE
+  7:  0.00,  // CASTLE
+  8: -0.04,  // DUNGEON — slightly depressed
+  9:  0.02,  // TREE base
+  10: 0.00,  // WALL
+  11: 0.00,  // FLOOR
+  12: 0.00,  // DOOR
+  13: 0.00,  // CHEST
+  2:  0.00,  // MOUNTAIN base
+};
+
 // ─── 3D object color palette ─────────────────────────────────────────────────
 const MAT: Record<string, THREE.MeshLambertMaterial> = {};
 
@@ -114,7 +133,6 @@ function build3DObject(tileId: number): THREE.Object3D | null {
       return g;
     }
     case T.DUNGEON: {
-      // Dark floor, no extrusion needed
       return null;
     }
     case T.DOOR: {
@@ -123,7 +141,6 @@ function build3DObject(tileId: number): THREE.Object3D | null {
       return door;
     }
     case T.WATER: {
-      // Slight depression — handled by ground texture
       return null;
     }
     default:
@@ -152,6 +169,7 @@ export class WorldRenderer {
   private npcSprites = new Map<string, BillboardSprite>();
   private otherPlayerSprites = new Map<string, BillboardSprite>();
   private fieldEnemySprites = new Map<string, BillboardSprite>();
+  private skyDome: THREE.Mesh | null = null;
 
   private targetCamX = 0;
   private targetCamZ = 0;
@@ -241,6 +259,115 @@ export class WorldRenderer {
     }
   }
 
+  // ─── Sky dome ─────────────────────────────────────────────────────────────
+
+  private setupSky(isOutdoor: boolean) {
+    if (this.skyDome) {
+      this.scene.remove(this.skyDome);
+      this.skyDome.geometry.dispose();
+      (this.skyDome.material as THREE.ShaderMaterial).dispose();
+      this.skyDome = null;
+    }
+    if (!isOutdoor) return;
+
+    const skyMat = new THREE.ShaderMaterial({
+      uniforms: {
+        topColor:   { value: new THREE.Color(0x1a3a8a) },
+        horizColor: { value: new THREE.Color(0xf0c080) },
+      },
+      vertexShader: /* glsl */`
+        varying float vY;
+        void main() {
+          vY = normalize(position).y;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */`
+        uniform vec3 topColor;
+        uniform vec3 horizColor;
+        varying float vY;
+        void main() {
+          float t = clamp(pow(max(vY, 0.0), 0.45), 0.0, 1.0);
+          gl_FragColor = vec4(mix(horizColor, topColor, t), 1.0);
+        }
+      `,
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+    });
+
+    const geo = new THREE.SphereGeometry(80, 16, 12);
+    this.skyDome = new THREE.Mesh(geo, skyMat);
+    this.scene.add(this.skyDome);
+  }
+
+  // ─── Terrain geometry ─────────────────────────────────────────────────────
+
+  private buildTerrainGeometry(tiles: number[][], cols: number, rows: number): THREE.BufferGeometry {
+    // Custom heightmapped grid in the XZ plane — no rotation needed
+    // Vertex (j, i) sits at world position (j, h, i) where h is terrain height.
+    // Heights are smoothed by averaging the up-to-4 surrounding tiles at each corner.
+
+    const vertCount = (rows + 1) * (cols + 1);
+    const positions = new Float32Array(vertCount * 3);
+    const normals   = new Float32Array(vertCount * 3);
+    const uvs       = new Float32Array(vertCount * 2);
+
+    // Precompute smoothed vertex heights
+    const vertH = new Float32Array(vertCount);
+    for (let i = 0; i <= rows; i++) {
+      for (let j = 0; j <= cols; j++) {
+        const vidx = i * (cols + 1) + j;
+        let sum = 0, count = 0;
+        for (const [dy, dx] of [[-1, -1], [-1, 0], [0, -1], [0, 0]] as const) {
+          const ty = i + dy, tx = j + dx;
+          if (ty >= 0 && ty < rows && tx >= 0 && tx < cols) {
+            sum += TILE_H[tiles[ty][tx]] ?? 0;
+            count++;
+          }
+        }
+        vertH[vidx] = count > 0 ? sum / count : 0;
+      }
+    }
+
+    // Fill attribute arrays
+    for (let i = 0; i <= rows; i++) {
+      for (let j = 0; j <= cols; j++) {
+        const vidx = i * (cols + 1) + j;
+        const p = vidx * 3;
+        positions[p + 0] = j * TILE;     // X
+        positions[p + 1] = vertH[vidx];  // Y (terrain height)
+        positions[p + 2] = i * TILE;     // Z (depth)
+        normals[p + 0] = 0; normals[p + 1] = 1; normals[p + 2] = 0;
+        const u = vidx * 2;
+        uvs[u + 0] = j / cols;           // U
+        uvs[u + 1] = 1 - i / rows;       // V (flip for CanvasTexture flipY=true)
+      }
+    }
+
+    // Index buffer — 2 triangles per tile (CCW winding)
+    const indices = new Uint32Array(rows * cols * 6);
+    let idx = 0;
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < cols; j++) {
+        const tl = i * (cols + 1) + j;
+        const tr = tl + 1;
+        const bl = (i + 1) * (cols + 1) + j;
+        const br = bl + 1;
+        indices[idx++] = tl; indices[idx++] = bl; indices[idx++] = tr;
+        indices[idx++] = tr; indices[idx++] = bl; indices[idx++] = br;
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setIndex(new THREE.BufferAttribute(indices, 1));
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('normal',   new THREE.BufferAttribute(normals,   3));
+    geo.setAttribute('uv',       new THREE.BufferAttribute(uvs,       2));
+    geo.computeVertexNormals();
+    return geo;
+  }
+
   // ─── Map building ─────────────────────────────────────────────────────────
 
   loadMap(mapDef: MapDef) {
@@ -253,26 +380,36 @@ export class WorldRenderer {
     const rows = mapDef.tiles.length;
     const cols = mapDef.tiles[0].length;
 
-    // Build ground as a single textured plane
+    // Outdoor: world / village / castle get sky dome + warm fog
+    const isOutdoor = mapDef.id === 'world' || mapDef.id === 'village' || mapDef.id === 'castle';
+    this.setupSky(isOutdoor);
+    if (isOutdoor) {
+      this.scene.fog = new THREE.Fog(0xf0c080, 28, 52);
+      this.renderer.setClearColor(0x1a3a8a);
+    } else {
+      this.scene.fog = new THREE.Fog(0x111122, 12, 22);
+      this.renderer.setClearColor(0x0a0a1a);
+    }
+
+    // Ground: heightmapped terrain with tile texture
     const groundCanvas = this.buildGroundCanvas(mapDef.tiles, cols, rows);
     const groundTex = new THREE.CanvasTexture(groundCanvas);
     groundTex.magFilter = THREE.NearestFilter;
     groundTex.minFilter = THREE.NearestFilter;
 
-    const groundGeo = new THREE.PlaneGeometry(cols * TILE, rows * TILE);
-    const groundMat = new THREE.MeshBasicMaterial({ map: groundTex });
+    const groundGeo = this.buildTerrainGeometry(mapDef.tiles, cols, rows);
+    const groundMat = new THREE.MeshLambertMaterial({ map: groundTex });
     const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.set(cols / 2, 0, rows / 2);
     this.mapGroup.add(ground);
 
-    // Place 3D objects on elevated tiles
+    // Place 3D objects on tiles at correct terrain height
     for (let ty = 0; ty < rows; ty++) {
       for (let tx = 0; tx < cols; tx++) {
         const tileId = mapDef.tiles[ty][tx];
         const obj = build3DObject(tileId);
         if (obj) {
-          obj.position.set(tx + 0.5, 0, ty + 0.5);
+          const h = TILE_H[tileId] ?? 0;
+          obj.position.set(tx + 0.5, h, ty + 0.5);
           this.mapGroup.add(obj);
         }
       }
@@ -449,6 +586,11 @@ export class WorldRenderer {
     const z = this.currentCamZ;
     this.camera.position.set(x, this.CAM_H, z + this.CAM_Z_OFFSET);
     this.camera.lookAt(x, 0, z);
+
+    // Sky dome follows camera in XZ so it never moves away
+    if (this.skyDome) {
+      this.skyDome.position.set(x, 0, z);
+    }
 
     // Pulse exit ring opacity and slow rotation
     const pulse = Math.sin(Date.now() * 0.0028) * 0.3 + 0.7;
