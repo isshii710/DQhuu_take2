@@ -79,7 +79,7 @@ export interface ClassDef {
   desc: string;
   baseStats: { hp: number; mp: number; atk: number; def: number; mag: number; spd: number };
   growthPerLevel: { hp: number; mp: number; atk: number; def: number; mag: number; spd: number };
-  skills: { level: number; name: string; mpCost: number; desc: string; magMult: number }[];
+  skills: { level: number; name: string; mpCost: number; desc: string; magMult: number; targetType?: 'enemy' | 'ally' | 'all_allies' | 'self' }[];
   spriteBase: number;
 }
 

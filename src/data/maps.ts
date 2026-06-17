@@ -229,6 +229,15 @@ export const MAP_DEFS: MapDef[] = [
         tileX: 3, tileY: 5, spriteColor: 0xFF8888,
       },
       { id: 'npc_zain', name: 'ゼイン', dialogue: ['罠には気をつけろ。'], tileX: 15, tileY: 5, spriteColor: 0x44FFAA, recruitId: 'zain' },
+      {
+        id: 'boss_grosur', name: '魔王グロスール',
+        dialogue: [
+          'フハハハ！よく来たな、愚かな冒険者よ！',
+          '聖石を砕いたのは我だ。この世界は闇に染まるのだ！',
+          '貴様らにはここで散ってもらう！かかってこい！',
+        ],
+        tileX: 9, tileY: 1, spriteColor: 0xFF0044,
+      },
     ],
     exits: [
       { tileX: 9,  tileY: 14, targetMap: 'world', targetX: 19, targetY: 18 },

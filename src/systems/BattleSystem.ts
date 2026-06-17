@@ -89,22 +89,50 @@ export function buildEnemyCombatant(e: EnemyDef, index: number): Combatant {
 export function resolveAction(actor: Combatant, action: BattleAction, target: Combatant): ActionResult {
   if (action.type === 'attack') {
     const variance = 0.9 + Math.random() * 0.2;
-    const dmg = Math.max(1, Math.floor((actor.atk - target.def * 0.5) * variance));
+    const atkMult = actor.statusEffects.has('atk_up') ? 1.5 : 1.0;
+    const defMult = target.statusEffects.has('def_up') ? 0.6 : 1.0;
+    const spdPenalty = target.statusEffects.has('slow') ? 0.85 : 1.0;
+    const dmg = Math.max(1, Math.floor((actor.atk * atkMult - target.def * 0.5 * defMult) * variance * spdPenalty));
     target.hp = Math.max(0, target.hp - dmg);
+    actor.statusEffects.delete('atk_up'); // one-shot buff
     return { actorId: actor.id, targetId: target.id, type: 'attack', damage: dmg, text: `${actor.name}の攻撃！ ${target.name}に${dmg}ダメージ！` };
   }
 
   if (action.type === 'magic') {
     const cls = getClassDef(action.spellName ?? '');
-    const skill = getClassDef(action.spellName ?? '').skills[0]; // fallback
-    const allSkills = getClassDef(action.spellName ?? '').skills;
-    const s = allSkills.find(sk => sk.name === action.spellName) ?? allSkills[0];
+    const s = cls.skills.find(sk => sk.name === action.spellName) ?? cls.skills[0];
     if (actor.mp < s.mpCost) {
       return { actorId: actor.id, type: 'magic', text: `${actor.name}はMPが足りない！` };
     }
     actor.mp = Math.max(0, actor.mp - s.mpCost);
 
-    // healing spells
+    // Buff: 鼓舞 → actor gains atk_up
+    if (action.spellName === '鼓舞') {
+      actor.statusEffects.add('atk_up');
+      return { actorId: actor.id, targetId: target.id, type: 'magic_buff', text: `${actor.name}は鼓舞した！次の攻撃力が上がった！` };
+    }
+
+    // Buff: バリア → target gains def_up
+    if (action.spellName === 'バリア') {
+      target.statusEffects.add('def_up');
+      return { actorId: actor.id, targetId: target.id, type: 'magic_buff', text: `${actor.name}はバリアを唱えた！${target.name}の防御力が上がった！` };
+    }
+
+    // Debuff: スロウ → target gains slow
+    if (action.spellName === 'スロウ') {
+      target.statusEffects.add('slow');
+      return { actorId: actor.id, targetId: target.id, type: 'magic_debuff', text: `${actor.name}はスロウを唱えた！${target.name}の素早さが下がった！` };
+    }
+
+    // Debuff: 毒針 → target gains poison (handled per-turn elsewhere)
+    if (action.spellName === '毒針') {
+      target.statusEffects.add('poison');
+      const dmg = Math.max(1, Math.floor(actor.mag * s.magMult * (0.9 + Math.random() * 0.2)));
+      target.hp = Math.max(0, target.hp - dmg);
+      return { actorId: actor.id, targetId: target.id, type: 'magic_debuff', damage: dmg, text: `${actor.name}は毒針を放った！${target.name}に${dmg}ダメージ＋毒！` };
+    }
+
+    // Healing spells
     if (action.spellName === 'ヒール' || action.spellName === '全体ヒール' || action.spellName === '復活の光') {
       const healAmt = Math.floor(actor.mag * s.magMult);
       target.hp = Math.min(target.maxHp, target.hp + healAmt);

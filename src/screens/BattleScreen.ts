@@ -10,6 +10,7 @@ import { writeSave } from '../systems/SaveSystem';
 import { mpManager } from '../systems/MultiplayerManager';
 import { getEnemyCanvas, getHeroCanvas } from '../engine/TextureCache';
 import type { BattleRoundResult } from '../types';
+import { ITEM_MAP } from '../data/items';
 import { getActiveCompanions, givePartyExp } from '../systems/PartySystem';
 
 type Phase = 'intro'|'command'|'executing'|'victory'|'defeat';
@@ -57,6 +58,7 @@ export class BattleScreen {
     spellName?: string;
     itemId?: string;
     targetIndex: number;
+    allyTargetId?: string;
   }> = [];
 
   constructor(container: HTMLElement) {
@@ -124,7 +126,7 @@ export class BattleScreen {
     this.root.appendChild(bg);
 
     // ── Enemy area ──
-    const enemyArea = el('div','position:relative;z-index:1;flex:0 0 38%;display:flex;align-items:center;justify-content:center;gap:24px;');
+    const enemyArea = el('div','position:relative;z-index:1;flex:0 0 34%;display:flex;align-items:center;justify-content:center;gap:24px;');
     const count = this.enemies.length;
     this.enemies.forEach((enemy, i) => {
       const wrap = el('div','display:flex;flex-direction:column;align-items:center;gap:6px;');
@@ -185,10 +187,9 @@ export class BattleScreen {
     // ── Party sprites (DQ Monsters style) ──
     const ci = Math.max(0, ['戦士','魔法使い','回復師','盗賊'].indexOf(this.save.className));
     this.playerMarker = el('div', `
-      position:absolute;
-      bottom:128px;left:50%;transform:translateX(-50%);
-      z-index:5;pointer-events:none;
-      display:flex;gap:6px;align-items:flex-end;
+      position:relative;z-index:5;pointer-events:none;flex-shrink:0;
+      display:flex;gap:6px;align-items:flex-end;justify-content:center;
+      padding:4px 0 2px;
       transition:transform 0.18s ease-in, opacity 0.18s;
     `);
 
@@ -385,7 +386,6 @@ export class BattleScreen {
   private buildSkillMenu(actor: Combatant) {
     this.commandEl.innerHTML = '';
 
-    // Determine class and level for this actor (hero vs companion)
     let className: string;
     let actorLevel: number;
     if (actor.id === this.playerC.id) {
@@ -407,17 +407,63 @@ export class BattleScreen {
     }
     const list = el('div','display:flex;flex-direction:column;gap:4px;');
     const back = document.createElement('button');
-    back.textContent='← 戻る';
-    back.style.cssText=`margin-bottom:4px;padding:4px 10px;background:transparent;color:#8888AA;border:none;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
-    back.addEventListener('click',()=>{ this.log('コマンドを選んでください'); this.buildCommandMenu(); });
+    back.textContent = '← 戻る';
+    back.style.cssText = `margin-bottom:4px;padding:4px 10px;background:transparent;color:#8888AA;border:none;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    back.addEventListener('click', () => { this.log('コマンドを選んでください'); this.buildCommandMenu(); });
     list.appendChild(back);
+
     skills.forEach(s => {
       const b = document.createElement('button');
-      b.textContent=`${s.name}  MP${s.mpCost}`;
-      b.style.cssText=`padding:6px 8px;background:rgba(16,16,30,0.9);color:#FFFDE7;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;text-align:left;`;
+      const targetHint = s.targetType === 'ally' ? ' 〔味方〕' : s.targetType === 'all_allies' ? ' 〔全体〕' : s.targetType === 'self' ? ' 〔自分〕' : '';
+      b.textContent = `${s.name}${targetHint}  MP${s.mpCost}`;
+      b.style.cssText = `padding:6px 8px;background:rgba(16,16,30,0.9);color:#FFFDE7;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;text-align:left;`;
       b.addEventListener('click', () => {
         if (actor.mp < s.mpCost) { this.log('MPが足りない！'); return; }
-        this.chooseAction('magic', s.name);
+        if (s.targetType === 'self') {
+          this.chooseAction('magic', s.name, undefined, actor.id);
+        } else if (s.targetType === 'all_allies') {
+          this.chooseAction('magic', s.name, undefined, '__all_allies__');
+        } else if (s.targetType === 'ally') {
+          this.buildAllyPicker(s.name, () => this.buildSkillMenu(actor));
+        } else {
+          this.chooseAction('magic', s.name);
+        }
+      });
+      list.appendChild(b);
+    });
+    this.commandEl.appendChild(list);
+  }
+
+  private buildAllyPicker(spellName: string, onBack: () => void, forItem = false, itemId?: string) {
+    this.commandEl.innerHTML = '';
+    const list = el('div', 'display:flex;flex-direction:column;gap:4px;');
+    const back = document.createElement('button');
+    back.textContent = '← 戻る';
+    back.style.cssText = `margin-bottom:4px;padding:4px 10px;background:transparent;color:#8888AA;border:none;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    back.addEventListener('click', onBack);
+    list.appendChild(back);
+
+    const allies: { id: string; name: string; c: Combatant }[] = [
+      { id: this.playerC.id, name: this.save.name, c: this.playerC },
+      ...this.companionCs.map(c => ({ id: c.id, name: c.name, c })),
+    ];
+
+    allies.forEach(ally => {
+      const b = document.createElement('button');
+      const hpPct = ally.c.hp / ally.c.maxHp;
+      const hpColor = hpPct < 0.25 ? '#FF6666' : hpPct < 0.5 ? '#FFAA44' : '#44FF88';
+      b.style.cssText = `padding:6px 8px;background:rgba(16,16,30,0.9);border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;text-align:left;display:flex;justify-content:space-between;`;
+      const nameSpan = document.createElement('span');
+      nameSpan.style.color = '#FFFDE7';
+      nameSpan.textContent = ally.name;
+      const hpSpan = document.createElement('span');
+      hpSpan.style.cssText = `color:${hpColor};font-size:11px;`;
+      hpSpan.textContent = `HP ${ally.c.hp}/${ally.c.maxHp}`;
+      b.appendChild(nameSpan);
+      b.appendChild(hpSpan);
+      b.addEventListener('click', () => {
+        if (forItem && itemId) this.chooseAction('item', undefined, itemId, ally.id);
+        else this.chooseAction('magic', spellName, undefined, ally.id);
       });
       list.appendChild(b);
     });
@@ -428,21 +474,36 @@ export class BattleScreen {
     this.commandEl.innerHTML = '';
     const list = el('div','display:flex;flex-direction:column;gap:4px;');
     const back = document.createElement('button');
-    back.textContent='← 戻る';
-    back.style.cssText=`margin-bottom:4px;padding:4px 10px;background:transparent;color:#8888AA;border:none;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
-    back.addEventListener('click',()=>{ this.log('コマンドを選んでください'); this.buildCommandMenu(); });
+    back.textContent = '← 戻る';
+    back.style.cssText = `margin-bottom:4px;padding:4px 10px;background:transparent;color:#8888AA;border:none;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    back.addEventListener('click', () => { this.log('コマンドを選んでください'); this.buildCommandMenu(); });
     list.appendChild(back);
-    const inv = this.save.inventory.slice(0,5);
+
+    const inv = this.save.inventory.filter(e => e.qty > 0 && ITEM_MAP[e.itemId]?.type === 'consumable').slice(0, 8);
     if (!inv.length) {
-      const msg=el('div','color:#555577;font-size:13px;padding:6px;font-family:'+FONT+';');
-      msg.textContent='アイテムがない';
+      const msg = el('div',`color:#555577;font-size:13px;padding:6px;font-family:${FONT};`);
+      msg.textContent = 'アイテムがない';
       list.appendChild(msg);
     } else {
       inv.forEach(entry => {
-        const b=document.createElement('button');
-        b.textContent=`${entry.itemId} ×${entry.qty}`;
-        b.style.cssText=`padding:6px 8px;background:rgba(16,16,30,0.9);color:#FFFDE7;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;text-align:left;`;
-        b.addEventListener('click',()=>this.chooseAction('item',undefined,entry.itemId));
+        const item = ITEM_MAP[entry.itemId];
+        if (!item) return;
+        const isHeal = !!(item.hpRestore || item.mpRestore);
+        const b = document.createElement('button');
+        b.style.cssText = `padding:6px 8px;background:rgba(16,16,30,0.9);color:#FFFDE7;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;text-align:left;display:flex;justify-content:space-between;`;
+        const n = document.createElement('span');
+        n.textContent = `${item.name} ×${entry.qty}`;
+        const hint = document.createElement('span');
+        hint.style.cssText = 'color:#AAAACC;font-size:10px;';
+        hint.textContent = isHeal ? '〔味方〕' : '';
+        b.appendChild(n); b.appendChild(hint);
+        b.addEventListener('click', () => {
+          if (isHeal) {
+            this.buildAllyPicker('', () => this.buildItemMenu(), true, entry.itemId);
+          } else {
+            this.chooseAction('item', undefined, entry.itemId);
+          }
+        });
         list.appendChild(b);
       });
     }
@@ -451,7 +512,7 @@ export class BattleScreen {
 
   // ─── Party command input ─────────────────────────────────────────────────────
 
-  private chooseAction(type: 'attack'|'magic'|'item'|'run', spellName?: string, itemId?: string) {
+  private chooseAction(type: 'attack'|'magic'|'item'|'run', spellName?: string, itemId?: string, allyTargetId?: string) {
     if (this.phase !== 'command') return;
 
     this.pendingActions.push({
@@ -460,6 +521,7 @@ export class BattleScreen {
       spellName,
       itemId,
       targetIndex: this.selectedEnemy,
+      allyTargetId,
     });
 
     this.commandActorIndex++;
@@ -515,15 +577,85 @@ export class BattleScreen {
     spellName?: string;
     itemId?: string;
     targetIndex: number;
+    allyTargetId?: string;
   }) {
+    // Ally-targeting actions (heal, buff, item on ally)
+    if (action.allyTargetId !== undefined) {
+      const doAllyAction = (allyTarget: Combatant) => {
+        const battleAction = {
+          actorId: action.actor.id,
+          type: action.type,
+          targetId: allyTarget.id,
+          spellName: action.spellName,
+          itemId: action.itemId,
+        };
+        const result = resolveAction(action.actor, battleAction, allyTarget);
+        this.log(result.text);
+        // Consume item from inventory
+        if (action.type === 'item' && action.itemId) {
+          const entry = this.save.inventory.find(e => e.itemId === action.itemId);
+          if (entry) { entry.qty--; if (entry.qty <= 0) this.save.inventory.splice(this.save.inventory.indexOf(entry), 1); }
+        }
+        // Refresh bars
+        if (allyTarget.id === this.playerC.id) {
+          this.save.stats.hp = this.playerC.hp;
+          this.save.stats.mp = this.playerC.mp;
+          this.refreshPlayerBar();
+        } else {
+          const ci = this.companionCs.indexOf(allyTarget);
+          if (ci >= 0) {
+            this.refreshCompanionBar(ci);
+            const m = this.save.party.find(p => `party_${p.id}` === allyTarget.id);
+            if (m) { m.stats.hp = allyTarget.hp; m.stats.mp = allyTarget.mp; }
+          }
+        }
+        const actorCi = this.companionCs.indexOf(action.actor);
+        if (actorCi >= 0) this.refreshCompanionBar(actorCi);
+        if (action.actor.id === this.playerC.id) this.refreshPlayerBar();
+      };
+
+      if (action.allyTargetId === '__all_allies__') {
+        // Heal / buff all allies
+        const allAllies = [this.playerC, ...this.companionCs.filter(c => c.hp > 0)];
+        const cls = getClassDef(action.actor.id === this.playerC.id ? this.save.className : (this.save.party.find(p => `party_${p.id}` === action.actor.id)?.className ?? ''));
+        const s = cls.skills.find(sk => sk.name === action.spellName);
+        if (s && action.actor.mp >= s.mpCost) {
+          action.actor.mp -= s.mpCost;
+          const healAmt = Math.floor(action.actor.mag * s.magMult);
+          let totalHeal = 0;
+          allAllies.forEach(ally => { const h = Math.min(healAmt, ally.maxHp - ally.hp); ally.hp += h; totalHeal += h; });
+          this.log(`${action.actor.name}は${s.name}を唱えた！全員のHPが${Math.round(totalHeal/allAllies.length)}回復した！`);
+          this.refreshPlayerBar();
+          this.companionCs.forEach((_, i) => this.refreshCompanionBar(i));
+          if (action.actor.id === this.playerC.id) this.refreshPlayerBar();
+          else { const ci = this.companionCs.indexOf(action.actor); if (ci >= 0) this.refreshCompanionBar(ci); }
+        } else {
+          this.log('MPが足りない！');
+        }
+      } else {
+        const allyTarget = action.allyTargetId === this.playerC.id
+          ? this.playerC
+          : this.companionCs.find(c => c.id === action.allyTargetId);
+        if (allyTarget) doAllyAction(allyTarget);
+      }
+      return;
+    }
+
+    // Enemy-targeting actions
+    if (action.type === 'run') {
+      const result = resolveAction(action.actor, { actorId: action.actor.id, type: 'run' }, action.actor);
+      this.log(result.text);
+      this.delay(800, () => this.finish(false, true));
+      return;
+    }
+
     // Skip if all enemies already dead
     if (this.enemyCs.every(e => e.hp <= 0)) return;
 
-    // Find living target (fallback to first living enemy if selected is dead)
     let targetIdx = action.targetIndex;
     if (!this.enemyCs[targetIdx] || this.enemyCs[targetIdx].hp <= 0) {
       targetIdx = this.enemyCs.findIndex(e => e.hp > 0);
-      if (targetIdx < 0) return; // no enemies alive
+      if (targetIdx < 0) return;
     }
 
     const target = this.enemyCs[targetIdx];
@@ -534,13 +666,6 @@ export class BattleScreen {
       spellName: action.spellName,
       itemId: action.itemId,
     };
-
-    if (action.type === 'run') {
-      const result = resolveAction(action.actor, battleAction, target ?? action.actor);
-      this.log(result.text);
-      this.delay(800, () => this.finish(false, true));
-      return;
-    }
 
     const isHero = action.actor.id === this.playerC.id;
 
@@ -556,7 +681,6 @@ export class BattleScreen {
         if (ci >= 0) this.refreshCompanionBar(ci);
       }
 
-      // Auto-switch target if killed
       if (this.enemyCs[this.selectedEnemy]?.hp <= 0) {
         const next = this.enemyCs.findIndex(e => e.hp > 0);
         if (next >= 0) { this.selectedEnemy = next; this.updateTargetHighlight(); }
@@ -565,10 +689,8 @@ export class BattleScreen {
 
     if ((action.type === 'attack' || action.type === 'magic') && target && target.hp > 0) {
       if (isHero) {
-        // Hero: use full step-in animation
         this.animateStepIn(targetIdx, action.type === 'magic').then(doResolve);
       } else {
-        // Companion: simple brightness flash on enemy panel, no marker movement
         const panel = this.enemyPanels[targetIdx];
         if (panel) {
           panel.wrap.style.filter = 'brightness(2.5) saturate(0)';
@@ -588,15 +710,19 @@ export class BattleScreen {
       const panel = this.enemyPanels[enemyIndex];
       if (!panel || !this.playerMarker) { resolve(); return; }
 
-      const rootRect = this.root.getBoundingClientRect();
+      const markerRect = this.playerMarker.getBoundingClientRect();
       const enemyRect = panel.wrap.getBoundingClientRect();
 
-      const dx = enemyRect.left - rootRect.left + enemyRect.width/2 - rootRect.width/2;
-      const dy = -(rootRect.height - 130 - (rootRect.height - (enemyRect.top - rootRect.top) - enemyRect.height/2));
+      const markerCx = markerRect.left + markerRect.width / 2;
+      const markerCy = markerRect.top + markerRect.height / 2;
+      const enemyCx = enemyRect.left + enemyRect.width / 2;
+      const enemyCy = enemyRect.top + enemyRect.height / 2;
+      const dx = enemyCx - markerCx;
+      const dy = enemyCy - markerCy;
 
       // Step toward enemy
       this.playerMarker.style.transition = 'transform 0.18s ease-in';
-      this.playerMarker.style.transform = `translateX(calc(-50% + ${dx}px)) translateY(${dy * 0.7}px)`;
+      this.playerMarker.style.transform = `translate(${dx * 0.6}px, ${dy * 0.7}px)`;
 
       setTimeout(() => {
         // Flash enemy red
@@ -632,7 +758,7 @@ export class BattleScreen {
         // Step back
         setTimeout(() => {
           this.playerMarker.style.transition = 'transform 0.15s ease-out';
-          this.playerMarker.style.transform = 'translateX(-50%)';
+          this.playerMarker.style.transform = 'translate(0,0)';
           setTimeout(resolve, 180);
         }, 220);
       }, 200);
