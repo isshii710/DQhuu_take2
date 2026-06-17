@@ -8,7 +8,7 @@ import {
 import { effectiveStats } from '../systems/InventorySystem';
 import { writeSave } from '../systems/SaveSystem';
 import { mpManager } from '../systems/MultiplayerManager';
-import { getEnemyCanvas } from '../engine/TextureCache';
+import { getEnemyCanvas, getHeroCanvas } from '../engine/TextureCache';
 import type { BattleRoundResult } from '../types';
 import { getActiveCompanions, givePartyExp } from '../systems/PartySystem';
 
@@ -87,6 +87,7 @@ export class BattleScreen {
     this.root.style.display = 'flex';
     this.phase = 'intro';
     this.updateTargetHighlight();
+    this.addBattleFlash();
     this.playIntro();
     if (this.isMultiplayer) this.setupMp();
   }
@@ -170,21 +171,37 @@ export class BattleScreen {
     const horizon = el('div','position:relative;z-index:1;height:2px;background:rgba(68,34,34,0.7);flex-shrink:0;');
     this.root.appendChild(horizon);
 
-    // ── Player marker ──
-    const classColors: Record<string, string> = {'戦士':'#FF6644','魔法使い':'#6688FF','回復師':'#44CC88','盗賊':'#FFAA22'};
-    const color = classColors[this.save.className] ?? '#88AAFF';
-    const classChars: Record<string, string> = {'戦士':'戦','魔法使い':'魔','回復師':'癒','盗賊':'盗'};
+    // ── Party sprites (DQ Monsters style) ──
+    const ci = Math.max(0, ['戦士','魔法使い','回復師','盗賊'].indexOf(this.save.className));
     this.playerMarker = el('div', `
       position:absolute;
-      width:52px;height:52px;border-radius:50%;
-      background:${color};border:2px solid #fff;
-      display:flex;align-items:center;justify-content:center;
-      color:#fff;font-size:16px;font-family:monospace;font-weight:bold;
-      bottom:130px;left:50%;transform:translateX(-50%);
+      bottom:128px;left:50%;transform:translateX(-50%);
       z-index:5;pointer-events:none;
+      display:flex;gap:6px;align-items:flex-end;
       transition:transform 0.18s ease-in, opacity 0.18s;
     `);
-    this.playerMarker.textContent = classChars[this.save.className] ?? '主';
+
+    // Companion sprites (left of hero, smaller)
+    for (const comp of this.companionCs) {
+      const memberId = comp.id.replace('party_', '');
+      const member = this.save.party.find(p => p.id === memberId);
+      const compCi = Math.max(0, ['戦士','魔法使い','回復師','盗賊'].indexOf(member?.className ?? '戦士'));
+      const compCvs = document.createElement('canvas');
+      compCvs.width = 32; compCvs.height = 32;
+      compCvs.style.cssText = 'width:54px;height:54px;image-rendering:pixelated;';
+      const cc2 = compCvs.getContext('2d')!;
+      cc2.drawImage(getHeroCanvas(compCi), 6*32, 0, 32, 32, 0, 0, 32, 32);
+      this.playerMarker.appendChild(compCvs);
+    }
+
+    // Hero sprite (main, facing enemies = frame 6 = up-facing)
+    const heroCvs = document.createElement('canvas');
+    heroCvs.width = 32; heroCvs.height = 32;
+    heroCvs.style.cssText = 'width:72px;height:72px;image-rendering:pixelated;';
+    const hcc = heroCvs.getContext('2d')!;
+    hcc.drawImage(getHeroCanvas(ci), 6*32, 0, 32, 32, 0, 0, 32, 32);
+    this.playerMarker.appendChild(heroCvs);
+
     this.root.appendChild(this.playerMarker);
 
     // ── Player panel ──
@@ -254,6 +271,18 @@ export class BattleScreen {
     track.appendChild(fill);
     row.appendChild(lbl); row.appendChild(track);
     return { row, fill, label: lbl };
+  }
+
+  // ─── Battle flash transition ────────────────────────────────────────────────
+
+  private addBattleFlash() {
+    const flash = el('div', 'position:absolute;inset:0;background:#fff;z-index:50;pointer-events:none;opacity:1;');
+    this.root.appendChild(flash);
+    requestAnimationFrame(() => {
+      flash.style.transition = 'opacity 0.38s ease-out';
+      requestAnimationFrame(() => { flash.style.opacity = '0'; });
+    });
+    setTimeout(() => flash.remove(), 450);
   }
 
   // ─── Log ────────────────────────────────────────────────────────────────────

@@ -2,7 +2,8 @@ import type { CharacterSave, MapId, Direction, NpcDef } from '../types';
 import { TILE_SIZE, WALKABLE, ENCOUNTER_TILES, ENCOUNTER_RATE } from '../config';
 import { getMapDef } from '../data/maps';
 import { writeSave } from '../systems/SaveSystem';
-import { randomEncounter } from '../data/enemies';
+import { randomEncounter, ENEMY_MAP, ENCOUNTER_GROUPS } from '../data/enemies';
+import { getEnemyTexture } from '../engine/TextureCache';
 import { mpManager } from '../systems/MultiplayerManager';
 import type { NetPlayer, EnemyDef } from '../types';
 import { WorldRenderer } from '../renderer/WorldRenderer';
@@ -11,6 +12,14 @@ import { HUD } from '../ui/HUD';
 import { VirtualJoystick } from '../ui/VirtualJoystick';
 import { getPartyMemberDef } from '../data/partyMembers';
 import { isRecruited, isRecruitable, recruitMember } from '../systems/PartySystem';
+
+interface FieldEnemy {
+  id: string;
+  tileX: number;
+  tileY: number;
+  enemyIds: string[];
+  spriteKey: string;
+}
 
 const MAP_FLAGS: Partial<Record<MapId, string>> = {
   village: 'village_visited',
@@ -64,6 +73,10 @@ export class WorldScreen {
   private hostedRoomCode = '';
   private guestCount = 0;
   private roomCodeOverlay: HTMLElement | null = null;
+
+  private fieldEnemies: FieldEnemy[] = [];
+  private fieldEnemyTimer = 0;
+  private preBattleMapId: MapId | null = null;
 
   private onBattle!: (opts: BattleOpts) => void;
   private onMenu!:   (save: CharacterSave, onClose: (s: CharacterSave)=>void) => void;
@@ -185,8 +198,21 @@ export class WorldScreen {
 
     // Load map and spawn player
     const mapDef = getMapDef(this.mapId);
-    this.renderer.loadMap(mapDef);
+    this.renderer.loadMap(mapDef); // clears field enemy sprites via clearFieldEnemies()
     this.playerSprite = this.renderer.spawnPlayer(ci, save.position.tileX, save.position.tileY);
+
+    // Field enemies
+    const sameMapReturn = opts.fromBattle && this.preBattleMapId === this.mapId;
+    if (sameMapReturn) {
+      for (const fe of this.fieldEnemies) {
+        this.renderer.addFieldEnemy(fe.id, getEnemyTexture(fe.spriteKey), fe.tileX, fe.tileY);
+      }
+    } else {
+      this.fieldEnemies = [];
+      if (mapDef.encounterGroup && this.mapId !== 'dungeon') this.spawnFieldEnemies();
+    }
+    this.preBattleMapId = null;
+    this.fieldEnemyTimer = 0;
 
     this.uiRoot.style.display = 'block';
     this.hudEl.show();
@@ -224,6 +250,13 @@ export class WorldScreen {
   };
 
   private update(delta: number) {
+    // Field enemy movement
+    this.fieldEnemyTimer += delta;
+    if (this.fieldEnemyTimer > 1800) {
+      this.fieldEnemyTimer = 0;
+      this.moveFieldEnemies();
+    }
+
     // Walk animation
     if (this.moving) {
       this.moveT += delta;
@@ -327,7 +360,19 @@ export class WorldScreen {
     this.save.position.tileY = ny;
 
     this.pendingMoveEnd = () => {
-      this.checkEncounter(tileId);
+      // Check field enemy collision
+      const hitEnemy = this.fieldEnemies.find(e => e.tileX === nx && e.tileY === ny);
+      if (hitEnemy) {
+        this.removeFieldEnemyById(hitEnemy.id);
+        const enemyDefs = hitEnemy.enemyIds.map(id => ({ ...ENEMY_MAP[id] }));
+        writeSave(this.save);
+        if (this.isMultiplayer) mpManager.movePlayer(nx, ny, this.mapId, this.faceDir(dir));
+        this.hudEl.update(this.save, getMapDef(this.mapId).name);
+        this.triggerBattle(enemyDefs);
+        return;
+      }
+      // Random encounters only in dungeon
+      if (this.mapId === 'dungeon') this.checkEncounter(tileId);
       writeSave(this.save);
       if (this.isMultiplayer) {
         mpManager.movePlayer(nx, ny, this.mapId, this.faceDir(dir));
@@ -337,6 +382,7 @@ export class WorldScreen {
   }
 
   private changeMap(targetMap: MapId, targetX: number, targetY: number) {
+    this.fieldEnemies = []; // renderer.loadMap() will clear sprites
     this.save.position = { mapId: targetMap, tileX: targetX, tileY: targetY };
     this.mapId = targetMap;
 
@@ -352,6 +398,8 @@ export class WorldScreen {
       ['戦士','魔法使い','回復師','盗賊'].indexOf(this.save.className),
       targetX, targetY
     );
+
+    if (mapDef.encounterGroup && targetMap !== 'dungeon') this.spawnFieldEnemies();
 
     this.hudEl.update(this.save, mapDef.name);
     this.hudEl.showMapBanner(mapDef.name);
@@ -369,16 +417,104 @@ export class WorldScreen {
     }
   }
 
-  private triggerBattle() {
+  private triggerBattle(enemies?: EnemyDef[]) {
+    this.preBattleMapId = this.mapId;
     const mapDef = getMapDef(this.mapId);
-    const enemies = randomEncounter(mapDef.encounterGroup ?? 'world_field');
-    this.onBattle({
-      save: this.save,
-      enemies,
-      isMultiplayer: this.isMultiplayer,
-      isHost: this.isHost,
-      returnMap: this.mapId,
-    });
+    const battleEnemies = enemies ?? randomEncounter(mapDef.encounterGroup ?? 'world_field');
+
+    // Battle transition: white flash
+    const flash = document.createElement('div');
+    flash.style.cssText = 'position:fixed;inset:0;background:#FFF;z-index:9999;pointer-events:none;opacity:0;transition:opacity 0.13s ease-in;';
+    document.body.appendChild(flash);
+    requestAnimationFrame(() => { flash.style.opacity = '1'; });
+
+    setTimeout(() => {
+      this.onBattle({ save: this.save, enemies: battleEnemies, isMultiplayer: this.isMultiplayer, isHost: this.isHost, returnMap: this.mapId });
+      flash.style.transition = 'opacity 0.22s ease-out';
+      flash.style.opacity = '0';
+      setTimeout(() => flash.remove(), 280);
+    }, 220);
+  }
+
+  // ─── Field enemies ─────────────────────────────────────────────────────────
+
+  private spawnFieldEnemies() {
+    const mapDef = getMapDef(this.mapId);
+    const tiles = mapDef.tiles;
+    const rows = tiles.length;
+    const cols = tiles[0]?.length ?? 0;
+    const npcSet = new Set(mapDef.npcs.map(n => `${n.tileX},${n.tileY}`));
+    const px = this.save.position.tileX;
+    const py = this.save.position.tileY;
+
+    const candidates: {x: number; y: number}[] = [];
+    for (let ty = 0; ty < rows; ty++) {
+      for (let tx = 0; tx < cols; tx++) {
+        if (!ENCOUNTER_TILES.has(tiles[ty][tx])) continue;
+        if (npcSet.has(`${tx},${ty}`)) continue;
+        if (Math.abs(tx - px) < 6 && Math.abs(ty - py) < 6) continue;
+        candidates.push({x: tx, y: ty});
+      }
+    }
+    candidates.sort(() => Math.random() - 0.5);
+
+    const group = mapDef.encounterGroup ?? 'world_field';
+    const groups = ENCOUNTER_GROUPS[group] ?? ENCOUNTER_GROUPS['world_field'];
+    const count = Math.min(8, Math.max(5, Math.floor(candidates.length * 0.02)));
+
+    for (let i = 0; i < Math.min(count, candidates.length); i++) {
+      const pos = candidates[i];
+      const groupPick = groups[Math.floor(Math.random() * groups.length)];
+      const spriteKey = ENEMY_MAP[groupPick[0]]?.sprite ?? 'slime';
+      const id = `fe_${Date.now()}_${i}`;
+      this.fieldEnemies.push({ id, tileX: pos.x, tileY: pos.y, enemyIds: groupPick, spriteKey });
+      this.renderer.addFieldEnemy(id, getEnemyTexture(spriteKey), pos.x, pos.y);
+    }
+  }
+
+  private moveFieldEnemies() {
+    if (this.moving || this.dialogOpen) return;
+    const mapDef = getMapDef(this.mapId);
+    const tiles = mapDef.tiles;
+    const rows = tiles.length;
+    const cols = tiles[0]?.length ?? 0;
+    const px = this.save.position.tileX;
+    const py = this.save.position.tileY;
+
+    for (const fe of this.fieldEnemies) {
+      const dist = Math.abs(fe.tileX - px) + Math.abs(fe.tileY - py);
+
+      let dirs: {dx: number; dy: number}[];
+      if (dist <= 5 && dist > 1) {
+        // Chase player
+        const sdx = Math.sign(px - fe.tileX);
+        const sdy = Math.sign(py - fe.tileY);
+        dirs = [{dx:sdx,dy:0},{dx:0,dy:sdy},{dx:-sdx,dy:0},{dx:0,dy:-sdy}].filter(d => d.dx!==0||d.dy!==0);
+      } else {
+        dirs = [{dx:0,dy:1},{dx:0,dy:-1},{dx:1,dy:0},{dx:-1,dy:0}];
+        dirs.sort(() => Math.random() - 0.5);
+      }
+
+      for (const d of dirs) {
+        const nx = fe.tileX + d.dx;
+        const ny = fe.tileY + d.dy;
+        if (nx < 0 || ny < 0 || ny >= rows || nx >= cols) continue;
+        if (!ENCOUNTER_TILES.has(tiles[ny][nx])) continue;
+        if (this.fieldEnemies.some(e => e !== fe && e.tileX === nx && e.tileY === ny)) continue;
+        fe.tileX = nx;
+        fe.tileY = ny;
+        this.renderer.moveFieldEnemy(fe.id, nx, ny);
+        break;
+      }
+    }
+  }
+
+  private removeFieldEnemyById(id: string) {
+    const idx = this.fieldEnemies.findIndex(e => e.id === id);
+    if (idx >= 0) {
+      this.renderer.removeFieldEnemy(id);
+      this.fieldEnemies.splice(idx, 1);
+    }
   }
 
   // ─── Dialogue ──────────────────────────────────────────────────────────────
