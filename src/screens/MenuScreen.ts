@@ -3,8 +3,9 @@ import type { Equipment } from '../types';
 import { ITEMS } from '../data/items';
 import { effectiveStats, equipItem, unequipSlot } from '../systems/InventorySystem';
 import { writeSave } from '../systems/SaveSystem';
+import { setActive, setBench, MAX_ACTIVE_COMPANIONS } from '../systems/PartySystem';
 
-type Tab = 'status'|'equipment'|'items';
+type Tab = 'status'|'equipment'|'items'|'party';
 
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
 
@@ -65,7 +66,7 @@ export class MenuScreen {
     // Tabs
     const tabBar = document.createElement('div');
     tabBar.style.cssText='display:flex;gap:4px;padding:8px 12px 0;';
-    const tabs: {id:Tab;label:string}[] = [{id:'status',label:'ステータス'},{id:'equipment',label:'装備'},{id:'items',label:'アイテム'}];
+    const tabs: {id:Tab;label:string}[] = [{id:'status',label:'ステータス'},{id:'equipment',label:'装備'},{id:'items',label:'アイテム'},{id:'party',label:'パーティ'}];
     tabs.forEach(t => {
       const b = document.createElement('button');
       const active = t.id===this.tab;
@@ -96,7 +97,8 @@ export class MenuScreen {
 
     if (this.tab==='status')    this.buildStatus();
     else if (this.tab==='equipment') this.buildEquipment();
-    else this.buildItems();
+    else if (this.tab==='items') this.buildItems();
+    else this.buildParty();
   }
 
   private buildStatus() {
@@ -196,6 +198,96 @@ export class MenuScreen {
       `;
       this.content.appendChild(row);
     });
+  }
+
+  private buildParty() {
+    const party = this.save.party;
+    if (!party.length) {
+      const empty = document.createElement('div');
+      empty.style.cssText = `color:#444466;font-size:14px;text-align:center;padding:20px;font-family:${FONT};`;
+      empty.textContent = 'まだ仲間がいない';
+      this.content.appendChild(empty);
+      return;
+    }
+
+    // アクティブ枠セクション
+    const activeHeader = document.createElement('div');
+    activeHeader.style.cssText = `color:#FFD700;font-size:11px;text-align:center;margin-bottom:6px;font-family:${FONT};`;
+    activeHeader.textContent = '─── 出撃メンバー（プレイヤー含め最大4人）───';
+    this.content.appendChild(activeHeader);
+
+    // プレイヤー自身（常に出撃）
+    const playerRow = document.createElement('div');
+    playerRow.style.cssText = 'display:flex;align-items:center;padding:7px 6px;background:rgba(212,175,55,0.12);border-radius:4px;margin-bottom:4px;';
+    playerRow.innerHTML = `
+      <div style="flex:1;">
+        <div style="color:#FFD700;font-size:13px;font-family:${FONT};">${this.save.name}（プレイヤー）</div>
+        <div style="color:#AAAACC;font-size:10px;font-family:${FONT};">${this.save.className} Lv.${this.save.level} HP ${this.save.stats.hp}/${this.save.stats.maxHp}</div>
+      </div>
+      <div style="color:#44FF88;font-size:11px;font-family:${FONT};padding:3px 8px;border:1px solid rgba(68,255,136,0.4);border-radius:3px;">出撃中</div>
+    `;
+    this.content.appendChild(playerRow);
+
+    // アクティブな仲間
+    const activeMembers = party.filter(m => this.save.activeMemberIds.includes(m.id));
+    activeMembers.forEach(member => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;padding:7px 6px;background:rgba(51,68,136,0.3);border-radius:4px;margin-bottom:4px;';
+      const info = document.createElement('div');
+      info.style.cssText = 'flex:1;';
+      info.innerHTML = `
+        <div style="color:#FFFDE7;font-size:13px;font-family:${FONT};">${member.name}</div>
+        <div style="color:#AAAACC;font-size:10px;font-family:${FONT};">${member.className} Lv.${member.level} HP ${member.stats.hp}/${member.stats.maxHp}</div>
+      `;
+      const benchBtn = document.createElement('button');
+      benchBtn.textContent = '控え';
+      benchBtn.style.cssText = `background:none;border:1px solid rgba(255,150,100,0.5);color:#FFAA88;font-size:11px;padding:3px 8px;border-radius:3px;cursor:pointer;pointer-events:auto;font-family:${FONT};`;
+      benchBtn.addEventListener('click', () => {
+        setBench(this.save, member.id);
+        writeSave(this.save);
+        this.render();
+      });
+      row.appendChild(info);
+      row.appendChild(benchBtn);
+      this.content.appendChild(row);
+    });
+
+    // 控えセクション
+    const benchMembers = party.filter(m => !this.save.activeMemberIds.includes(m.id));
+    if (benchMembers.length > 0) {
+      const benchHeader = document.createElement('div');
+      benchHeader.style.cssText = `color:#AAAACC;font-size:11px;text-align:center;margin:10px 0 6px;font-family:${FONT};`;
+      benchHeader.textContent = '─── 控えメンバー ───';
+      this.content.appendChild(benchHeader);
+
+      const canActivate = this.save.activeMemberIds.length < MAX_ACTIVE_COMPANIONS;
+
+      benchMembers.forEach(member => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;padding:7px 6px;background:rgba(255,255,255,0.04);border-radius:4px;margin-bottom:4px;';
+        const info = document.createElement('div');
+        info.style.cssText = 'flex:1;';
+        info.innerHTML = `
+          <div style="color:#FFFDE7;font-size:13px;font-family:${FONT};">${member.name}</div>
+          <div style="color:#AAAACC;font-size:10px;font-family:${FONT};">${member.className} Lv.${member.level} HP ${member.stats.hp}/${member.stats.maxHp}</div>
+        `;
+        const activeBtn = document.createElement('button');
+        activeBtn.textContent = '出撃';
+        if (canActivate) {
+          activeBtn.style.cssText = `background:none;border:1px solid rgba(68,255,136,0.5);color:#44FF88;font-size:11px;padding:3px 8px;border-radius:3px;cursor:pointer;pointer-events:auto;font-family:${FONT};`;
+          activeBtn.addEventListener('click', () => {
+            setActive(this.save, member.id);
+            writeSave(this.save);
+            this.render();
+          });
+        } else {
+          activeBtn.style.cssText = `background:none;border:1px solid rgba(100,100,100,0.4);color:#666688;font-size:11px;padding:3px 8px;border-radius:3px;cursor:default;pointer-events:none;font-family:${FONT};`;
+        }
+        row.appendChild(info);
+        row.appendChild(activeBtn);
+        this.content.appendChild(row);
+      });
+    }
   }
 
   private close() {

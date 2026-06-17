@@ -2,7 +2,7 @@ import type { CharacterSave, EnemyDef } from '../types';
 import { COLORS } from '../config';
 import { getClassDef } from '../data/characters';
 import {
-  buildCombatant, buildEnemyCombatant, resolveAction,
+  buildCombatant, buildEnemyCombatant, buildPartyMemberCombatant, resolveAction,
   enemyAI, applyExpGain, type Combatant,
 } from '../systems/BattleSystem';
 import { effectiveStats } from '../systems/InventorySystem';
@@ -10,6 +10,7 @@ import { writeSave } from '../systems/SaveSystem';
 import { mpManager } from '../systems/MultiplayerManager';
 import { getEnemyCanvas } from '../engine/TextureCache';
 import type { BattleRoundResult } from '../types';
+import { getActiveCompanions, givePartyExp } from '../systems/PartySystem';
 
 type Phase = 'intro'|'command'|'executing'|'victory'|'defeat';
 
@@ -28,6 +29,7 @@ export class BattleScreen {
   private returnMap!: string;
 
   private playerC!: Combatant;
+  private companionCs: Combatant[] = [];
   private enemyCs: Combatant[] = [];
   private phase: Phase = 'intro';
 
@@ -38,6 +40,7 @@ export class BattleScreen {
   private playerHpLabel!: HTMLElement;
   private playerMpLabel!: HTMLElement;
   private enemyPanels: { wrap: HTMLElement; hpFill: HTMLElement; hpLabel: HTMLElement }[] = [];
+  private companionPanels: { hpFill: HTMLElement; hpLabel: HTMLElement }[] = [];
   private selectedEnemy = 0;
 
   private onEnd!: (save: CharacterSave, mapId: string) => void;
@@ -69,10 +72,12 @@ export class BattleScreen {
     this.timers.forEach(clearTimeout);
     this.timers = [];
     this.enemyPanels = [];
+    this.companionPanels = [];
 
     const stats = effectiveStats(save);
     this.playerC = buildCombatant({ ...save, stats: { ...save.stats, ...stats } });
     this.enemyCs = enemies.map((e, i) => buildEnemyCombatant(e, i));
+    this.companionCs = getActiveCompanions(save).map((m, i) => buildPartyMemberCombatant(m, i));
     this.selectedEnemy = this.enemyCs.findIndex(e => e.hp > 0);
 
     this.buildUI();
@@ -170,6 +175,28 @@ export class BattleScreen {
     bars.appendChild(hpRow.row);
     bars.appendChild(mpRow.row);
     panel.appendChild(bars);
+
+    // ── Companion HP bars ──
+    if (this.companionCs.length > 0) {
+      const compArea = el('div','margin-bottom:6px;display:flex;flex-direction:column;gap:3px;');
+      this.companionPanels = [];
+      this.companionCs.forEach(comp => {
+        const row = el('div','display:flex;align-items:center;gap:6px;');
+        const nameLbl = el('div',`color:#BBDDFF;font-size:10px;font-family:monospace;min-width:60px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;`);
+        nameLbl.textContent = comp.name;
+        const track = el('div','flex:1;height:4px;background:rgba(255,255,255,0.15);border-radius:3px;overflow:hidden;');
+        const fill = el('div','height:100%;background:#44AAFF;border-radius:3px;width:100%;transition:width 0.3s;');
+        const hpLbl = el('div','font-size:9px;color:#AACCFF;font-family:monospace;min-width:50px;text-align:right;');
+        hpLbl.textContent = `${comp.hp}/${comp.maxHp}`;
+        track.appendChild(fill);
+        row.appendChild(nameLbl);
+        row.appendChild(track);
+        row.appendChild(hpLbl);
+        compArea.appendChild(row);
+        this.companionPanels.push({ hpFill: fill, hpLabel: hpLbl });
+      });
+      panel.appendChild(compArea);
+    }
 
     // ── Log ──
     this.logEl = el('div',`color:#FFFDE7;font-size:13px;min-height:36px;line-height:1.4;font-family:${FONT};`);
@@ -314,21 +341,75 @@ export class BattleScreen {
 
     this.delay(900, () => {
       if (this.enemyCs.every(e => e.hp <= 0)) { this.doVictory(); return; }
-      this.doEnemyTurns();
+      this.doCompanionTurns(() => {
+        if (this.enemyCs.every(e => e.hp <= 0)) { this.doVictory(); return; }
+        this.doEnemyTurns();
+      });
     });
+  }
+
+  private doCompanionTurns(onDone: () => void) {
+    const livingCompanions = this.companionCs.filter(c => c.hp > 0);
+    if (!livingCompanions.length) { onDone(); return; }
+
+    let d = 0;
+    livingCompanions.forEach(comp => {
+      this.delay(d, () => {
+        const livingEnemies = this.enemyCs.filter(e => e.hp > 0);
+        if (!livingEnemies.length) return;
+        const target = livingEnemies[0];
+
+        // 30%の確率でスキルを使う
+        const cls = getClassDef(comp.isEnemy ? '戦士' : (() => {
+          // Find className from save
+          const m = this.save.party.find(p => `party_${p.id}` === comp.id);
+          return m ? m.className : '戦士';
+        })());
+        const availableSkills = cls.skills.filter(s => s.level <= (this.save.party.find(p => `party_${p.id}` === comp.id)?.level ?? 1));
+        const useSkill = availableSkills.length > 0 && Math.random() < 0.3 && comp.mp >= availableSkills[0].mpCost;
+
+        let result;
+        if (useSkill) {
+          const skill = availableSkills[0];
+          result = resolveAction(comp, { actorId: comp.id, type: 'magic', targetId: target.id, spellName: skill.name }, target);
+        } else {
+          result = resolveAction(comp, { actorId: comp.id, type: 'attack', targetId: target.id }, target);
+        }
+        this.log(result.text);
+        const ei = this.enemyCs.indexOf(target);
+        if (result.damage && ei >= 0) this.showDmg(ei, result.damage, false);
+        this.refreshEnemyBar(ei);
+      });
+      d += 650;
+    });
+
+    this.delay(d + 200, onDone);
   }
 
   private doEnemyTurns() {
     const living = this.enemyCs.filter(e => e.hp > 0);
+    const alliedTargets = [this.playerC, ...this.companionCs.filter(c => c.hp > 0)];
     let d = 0;
     living.forEach(enemy => {
       this.delay(d, () => {
-        const action = enemyAI(enemy, [this.playerC]);
-        const result = resolveAction(enemy, action, this.playerC);
+        const action = enemyAI(enemy, alliedTargets);
+        const target = alliedTargets.find(t => t.id === action.targetId) ?? this.playerC;
+        const result = resolveAction(enemy, action, target);
         this.log(result.text);
-        if (result.damage) this.showDmg(-1, result.damage, true);
-        this.save.stats.hp = this.playerC.hp;
-        this.refreshPlayerBar();
+        if (result.damage) {
+          if (target.id === this.playerC.id) {
+            this.showDmg(-1, result.damage, true);
+            this.save.stats.hp = this.playerC.hp;
+            this.refreshPlayerBar();
+          } else {
+            // 仲間がダメージを受けた場合
+            const ci = this.companionCs.indexOf(target);
+            if (ci >= 0) this.refreshCompanionBar(ci);
+            // sync hp back to save
+            const m = this.save.party.find(p => `party_${p.id}` === target.id);
+            if (m) m.stats.hp = target.hp;
+          }
+        }
       });
       d += 750;
     });
@@ -351,6 +432,16 @@ export class BattleScreen {
     p.hpFill.style.background = pct > 50 ? '#dd3322' : '#ff5500';
     p.hpLabel.textContent = `HP ${e.hp}`;
     if (e.hp <= 0) p.wrap.style.opacity = '0.25';
+  }
+
+  private refreshCompanionBar(i: number) {
+    const p = this.companionPanels[i];
+    const c = this.companionCs[i];
+    if (!p || !c) return;
+    const pct = Math.max(0, c.hp / c.maxHp) * 100;
+    p.hpFill.style.width = pct + '%';
+    p.hpFill.style.background = pct < 25 ? '#FF4444' : '#44AAFF';
+    p.hpLabel.textContent = `${c.hp}/${c.maxHp}`;
   }
 
   private refreshPlayerBar() {
@@ -395,13 +486,17 @@ export class BattleScreen {
     const totalExp  = this.enemies.reduce((s,e) => s+e.exp,  0);
     const totalGold = this.enemies.reduce((s,e) => s+e.gold, 0);
     const levelResult = applyExpGain(this.save, totalExp);
+    const partyLevelUps = givePartyExp(this.save, totalExp);
     this.save.stats.hp = this.playerC.hp;
     this.save.stats.mp = this.playerC.mp;
     this.save.gold += totalGold;
     writeSave(this.save);
 
     let msg = `★ 勝利！ ★\n\n${totalExp} EXP 獲得！\n${totalGold} G 獲得！`;
-    if (levelResult.leveled) msg += `\n\nレベルアップ！ Lv.${levelResult.newLevel}`;
+    if (levelResult.leveled) msg += `\n\n${this.save.name} レベルアップ！ Lv.${levelResult.newLevel}`;
+    for (const lu of partyLevelUps) {
+      msg += `\n${lu.name} レベルアップ！ Lv.${lu.newLevel}`;
+    }
     this.showModal(msg, '#FFD700');
     this.delay(2800, () => this.finish(true, false));
   }
