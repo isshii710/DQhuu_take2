@@ -91,6 +91,8 @@ export class WorldScreen {
   private minimapCtx: CanvasRenderingContext2D | null = null;
 
   private shopLabels: Array<{ el: HTMLElement; worldX: number; worldZ: number }> = [];
+  private exitLabels: Array<{ el: HTMLElement; worldX: number; worldZ: number }> = [];
+  private exitLabelT = 0;
 
   private onBattle!: (opts: BattleOpts) => void;
   private onMenu!:   (save: CharacterSave, onClose: (s: CharacterSave)=>void) => void;
@@ -238,8 +240,9 @@ export class WorldScreen {
     this.minimapCtx = this.minimapCvs.getContext('2d')!;
     this.drawMinimap();
 
-    // Shop labels
+    // Shop labels and exit labels
     this.buildShopLabels();
+    this.buildExitLabels();
 
     this.uiRoot.style.display = 'block';
     this.hudEl.show();
@@ -301,9 +304,24 @@ export class WorldScreen {
       if (s) {
         sl.el.style.display = 'block';
         sl.el.style.left = (s.x - sl.el.offsetWidth / 2) + 'px';
-        sl.el.style.top = (s.y - 50) + 'px'; // above the NPC
+        sl.el.style.top = (s.y - 50) + 'px';
       } else {
         sl.el.style.display = 'none';
+      }
+    }
+
+    // Exit label projection + blink
+    this.exitLabelT = (this.exitLabelT + delta) % 1400;
+    const exitOpacity = this.exitLabelT < 700 ? '1' : '0.45';
+    for (const el of this.exitLabels) {
+      const s = this.renderer.projectToScreen(el.worldX, el.worldZ);
+      if (s) {
+        el.el.style.display = 'block';
+        el.el.style.opacity = exitOpacity;
+        el.el.style.left = (s.x - el.el.offsetWidth / 2) + 'px';
+        el.el.style.top = (s.y - 62) + 'px';
+      } else {
+        el.el.style.display = 'none';
       }
     }
 
@@ -466,8 +484,9 @@ export class WorldScreen {
     this.minimapCtx = this.minimapCvs.getContext('2d')!;
     this.drawMinimap();
 
-    // Shop labels for new map
+    // Shop labels and exit labels for new map
     this.buildShopLabels();
+    this.buildExitLabels();
 
     this.hudEl.update(this.save, mapDef.name);
     this.hudEl.showMapBanner(mapDef.name);
@@ -648,6 +667,44 @@ export class WorldScreen {
       el.textContent = text;
       this.uiRoot.appendChild(el);
       this.shopLabels.push({ el, worldX: npc.tileX + 0.5, worldZ: npc.tileY + 0.5 });
+    }
+  }
+
+  // ─── Exit labels ───────────────────────────────────────────────────────────
+
+  private buildExitLabels() {
+    for (const el of this.exitLabels) el.el.remove();
+    this.exitLabels = [];
+
+    const MAP_TEXT: Record<string, string> = {
+      world: '🌍 フィールドへ',
+      village: '🏘 ハジメ村へ',
+      castle: '🏰 アルデア城へ',
+      dungeon: '⬇ 闇の洞窟へ',
+    };
+
+    const mapDef = getMapDef(this.mapId);
+    // De-duplicate exits that share the same tile area (e.g. two door tiles side by side)
+    const seen = new Set<string>();
+    for (const exit of mapDef.exits) {
+      const key = exit.targetMap;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const text = MAP_TEXT[exit.targetMap] ?? `→ ${exit.targetMap}`;
+      const label = document.createElement('div');
+      label.style.cssText = `
+        position:absolute;pointer-events:none;z-index:7;white-space:nowrap;
+        font-size:11px;font-weight:bold;font-family:${FONT};
+        background:rgba(0,20,40,0.88);
+        border:1px solid rgba(0,220,255,0.75);
+        border-radius:4px;padding:3px 7px;
+        color:#00EEFF;display:none;
+        text-shadow:0 0 6px rgba(0,200,255,0.8);
+      `;
+      label.textContent = text;
+      this.uiRoot.appendChild(label);
+      this.exitLabels.push({ el: label, worldX: exit.tileX + 0.5, worldZ: exit.tileY + 0.5 });
     }
   }
 
