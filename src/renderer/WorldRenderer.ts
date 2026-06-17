@@ -1,0 +1,479 @@
+import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { HorizontalTiltShiftShader } from 'three/examples/jsm/shaders/HorizontalTiltShiftShader.js';
+import { VerticalTiltShiftShader } from 'three/examples/jsm/shaders/VerticalTiltShiftShader.js';
+import type { MapDef, NpcDef } from '../types';
+import { T } from '../config';
+import { getHeroTexture, getNpcTexture, getTileCanvas } from '../engine/TextureCache';
+import { BillboardSprite } from './BillboardSprite';
+
+// HD-2D look: warm cinematic grade + vignette, applied in display space (after OutputPass)
+const WarmGradeShader = {
+  uniforms: {
+    tDiffuse:   { value: null as THREE.Texture | null },
+    offset:     { value: 1.05 },  // vignette spread
+    darkness:   { value: 0.72 },  // vignette strength
+    warmth:     { value: 0.022 }, // warm tint
+    saturation: { value: 1.2 },
+    contrast:   { value: 1.07 },
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+  `,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform float offset, darkness, warmth, saturation, contrast;
+    varying vec2 vUv;
+    void main() {
+      vec4 texel = texture2D(tDiffuse, vUv);
+      vec3 col = texel.rgb;
+      // contrast around mid-grey
+      col = (col - 0.5) * contrast + 0.5;
+      // saturation
+      float l = dot(col, vec3(0.299, 0.587, 0.114));
+      col = mix(vec3(l), col, saturation);
+      // warm grade
+      col.r += warmth;
+      col.b -= warmth * 0.6;
+      // vignette
+      vec2 uv = (vUv - 0.5) * offset;
+      float vig = clamp(1.0 - dot(uv, uv) * darkness, 0.0, 1.0);
+      col *= vig;
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), texel.a);
+    }
+  `,
+};
+
+const TILE = 1;          // 1 Three.js unit = 1 tile
+const SPRITE_Y = 0.52;  // height of sprite above ground
+// ─── 3D object color palette ─────────────────────────────────────────────────
+const MAT: Record<string, THREE.MeshLambertMaterial> = {};
+
+function mat(hex: number): THREE.MeshLambertMaterial {
+  const k = hex.toString(16);
+  if (!MAT[k]) MAT[k] = new THREE.MeshLambertMaterial({ color: hex });
+  return MAT[k];
+}
+
+// ─── Tile → 3D object builder ─────────────────────────────────────────────────
+
+function build3DObject(tileId: number): THREE.Object3D | null {
+  switch (tileId) {
+    case T.TREE: {
+      const g = new THREE.Group();
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 0.4, 6), mat(0x5D4037));
+      trunk.position.y = 0.2;
+      const leaves = new THREE.Mesh(new THREE.ConeGeometry(0.38, 0.7, 7), mat(0x388E3C));
+      leaves.position.y = 0.75;
+      g.add(trunk, leaves);
+      return g;
+    }
+    case T.FOREST: {
+      const g = new THREE.Group();
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.1, 0.35, 6), mat(0x5D4037));
+      trunk.position.y = 0.175;
+      const leaves = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.65, 7), mat(0x2E7D32));
+      leaves.position.y = 0.67;
+      g.add(trunk, leaves);
+      return g;
+    }
+    case T.MOUNTAIN: {
+      const peak = new THREE.Mesh(new THREE.ConeGeometry(0.46, 1.2, 8), mat(0x616161));
+      peak.position.y = 0.6;
+      const snow = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.4, 8), mat(0xEEEEEE));
+      snow.position.y = 1.14;
+      const g = new THREE.Group();
+      g.add(peak, snow);
+      return g;
+    }
+    case T.WALL: {
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.4, 1.0), mat(0x546E7A));
+      wall.position.y = 0.7;
+      return wall;
+    }
+    case T.VILLAGE: {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.55, 0.8), mat(0xD7CCC8));
+      body.position.y = 0.275;
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(0.62, 0.45, 4), mat(0xC62828));
+      roof.position.y = 0.73;
+      roof.rotation.y = Math.PI / 4;
+      g.add(body, roof);
+      return g;
+    }
+    case T.CASTLE: {
+      const g = new THREE.Group();
+      const base = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.0, 0.9), mat(0x90A4AE));
+      base.position.y = 0.5;
+      const top = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.5), mat(0xB0BEC5));
+      top.position.y = 1.2;
+      g.add(base, top);
+      return g;
+    }
+    case T.DUNGEON: {
+      // Dark floor, no extrusion needed
+      return null;
+    }
+    case T.DOOR: {
+      const door = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.9, 0.15), mat(0x5D4037));
+      door.position.y = 0.45;
+      return door;
+    }
+    case T.WATER: {
+      // Slight depression — handled by ground texture
+      return null;
+    }
+    default:
+      return null;
+  }
+}
+
+// ─── WorldRenderer ────────────────────────────────────────────────────────────
+
+export class WorldRenderer {
+  readonly scene: THREE.Scene;
+  readonly camera: THREE.OrthographicCamera;
+  readonly renderer: THREE.WebGLRenderer;
+
+  // Post-processing (HD-2D tilt-shift + bloom + warm grade)
+  private composer!: EffectComposer;
+  private bloomPass!: UnrealBloomPass;
+  private hTiltPass!: ShaderPass;
+  private vTiltPass!: ShaderPass;
+  private readonly TILT_FOCUS = 0.46; // focused band (screen-space, 0=bottom .. 1=top)
+  private readonly TILT_BLUR  = 3.0;  // blur strength multiplier
+
+  private mapGroup = new THREE.Group();
+  private exitMarkers = new THREE.Group();
+  private exitMaterials: THREE.MeshBasicMaterial[] = [];
+  private playerSprite: BillboardSprite | null = null;
+  private npcSprites = new Map<string, BillboardSprite>();
+  private otherPlayerSprites = new Map<string, BillboardSprite>();
+  private fieldEnemySprites = new Map<string, BillboardSprite>();
+
+  private targetCamX = 0;
+  private targetCamZ = 0;
+  private currentCamX = 0;
+  private currentCamZ = 0;
+
+  // Camera configuration
+  private readonly CAM_H = 10;
+  private readonly CAM_Z_OFFSET = 9;
+  private readonly FRUSTUM = 5.5; // half-width in tiles
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setClearColor(0x0a0a1a);
+    // Cinematic tone mapping for the HD-2D highlight rolloff
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.12;
+
+    this.scene = new THREE.Scene();
+    this.scene.fog = new THREE.Fog(0x0a0a1a, 22, 42);
+
+    // Orthographic camera for classic 3/4 RPG view
+    const aspect = canvas.clientWidth / canvas.clientHeight;
+    const f = this.FRUSTUM;
+    this.camera = new THREE.OrthographicCamera(-f, f, f/aspect, -f/aspect, 0.1, 100);
+    this.camera.position.set(0, this.CAM_H, this.CAM_Z_OFFSET);
+    this.camera.lookAt(0, 0, 0);
+
+    // Lighting — warm key light + cool fill for HD-2D depth
+    const ambient = new THREE.AmbientLight(0xffe6c4, 0.62);
+    const sun = new THREE.DirectionalLight(0xfff2d6, 1.15);
+    sun.position.set(6, 14, -3);
+    const fill = new THREE.DirectionalLight(0x6688cc, 0.35);
+    fill.position.set(-6, 8, 6);
+    this.scene.add(ambient, sun, fill);
+
+    this.scene.add(this.mapGroup);
+    this.scene.add(this.exitMarkers);
+
+    // Post-processing pipeline
+    this.setupComposer(canvas);
+
+    // Handle resize
+    this.onResize();
+    window.addEventListener('resize', () => this.onResize());
+  }
+
+  private setupComposer(canvas: HTMLCanvasElement) {
+    const w = canvas.clientWidth || window.innerWidth;
+    const h = canvas.clientHeight || window.innerHeight;
+
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.composer.setSize(w, h);
+
+    const renderPass = new RenderPass(this.scene, this.camera);
+
+    // Bloom — soft glow on bright tiles, lights and exit markers
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.5, 0.65, 0.62);
+
+    // Tilt-shift — keeps a focused horizontal band, blurs near/far for the diorama feel
+    this.hTiltPass = new ShaderPass(HorizontalTiltShiftShader);
+    this.vTiltPass = new ShaderPass(VerticalTiltShiftShader);
+    this.hTiltPass.uniforms['r'].value = this.TILT_FOCUS;
+    this.vTiltPass.uniforms['r'].value = this.TILT_FOCUS;
+
+    const outputPass = new OutputPass();
+    const gradePass = new ShaderPass(WarmGradeShader);
+
+    this.composer.addPass(renderPass);
+    this.composer.addPass(this.bloomPass);
+    this.composer.addPass(this.hTiltPass);
+    this.composer.addPass(this.vTiltPass);
+    this.composer.addPass(outputPass);
+    this.composer.addPass(gradePass);
+  }
+
+  onResize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    this.renderer.setSize(w, h);
+    const aspect = w / h;
+    const f = this.FRUSTUM;
+    this.camera.left   = -f;
+    this.camera.right  =  f;
+    this.camera.top    =  f / aspect;
+    this.camera.bottom = -f / aspect;
+    this.camera.updateProjectionMatrix();
+
+    // Resize post-processing to match
+    if (this.composer) {
+      this.composer.setSize(w, h);
+      this.bloomPass.setSize(w, h);
+      this.hTiltPass.uniforms['h'].value = this.TILT_BLUR / w;
+      this.vTiltPass.uniforms['v'].value = this.TILT_BLUR / h;
+    }
+  }
+
+  // ─── Map building ─────────────────────────────────────────────────────────
+
+  loadMap(mapDef: MapDef) {
+    // Clear previous map
+    this.mapGroup.clear();
+    this.npcSprites.forEach(s => s?.removeFrom(this.scene));
+    this.npcSprites.clear();
+    this.clearFieldEnemies();
+
+    const rows = mapDef.tiles.length;
+    const cols = mapDef.tiles[0].length;
+
+    // Build ground as a single textured plane
+    const groundCanvas = this.buildGroundCanvas(mapDef.tiles, cols, rows);
+    const groundTex = new THREE.CanvasTexture(groundCanvas);
+    groundTex.magFilter = THREE.NearestFilter;
+    groundTex.minFilter = THREE.NearestFilter;
+
+    const groundGeo = new THREE.PlaneGeometry(cols * TILE, rows * TILE);
+    const groundMat = new THREE.MeshBasicMaterial({ map: groundTex });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.set(cols / 2, 0, rows / 2);
+    this.mapGroup.add(ground);
+
+    // Place 3D objects on elevated tiles
+    for (let ty = 0; ty < rows; ty++) {
+      for (let tx = 0; tx < cols; tx++) {
+        const tileId = mapDef.tiles[ty][tx];
+        const obj = build3DObject(tileId);
+        if (obj) {
+          obj.position.set(tx + 0.5, 0, ty + 0.5);
+          this.mapGroup.add(obj);
+        }
+      }
+    }
+
+    // Camera bounds
+    this.scene.userData.mapCols = cols;
+    this.scene.userData.mapRows = rows;
+
+    // NPCs
+    mapDef.npcs.forEach(npc => this.addNpc(npc));
+
+    // Exit markers — glowing cyan ring on the ground
+    this.exitMarkers.clear();
+    this.exitMaterials = [];
+    mapDef.exits.forEach(exit => {
+      const mat = new THREE.MeshBasicMaterial({ color: 0x00DDFF, side: THREE.DoubleSide, transparent: true, opacity: 0.75 });
+      this.exitMaterials.push(mat);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.28, 0.46, 20), mat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(exit.tileX + 0.5, 0.02, exit.tileY + 0.5);
+      this.exitMarkers.add(ring);
+    });
+  }
+
+  private buildGroundCanvas(tiles: number[][], cols: number, rows: number): HTMLCanvasElement {
+    const S = 32;
+    const c = document.createElement('canvas');
+    c.width  = cols * S;
+    c.height = rows * S;
+    const ctx = c.getContext('2d')!;
+    ctx.imageSmoothingEnabled = false;
+    tiles.forEach((row, ty) => {
+      row.forEach((tileId, tx) => {
+        const tc = getTileCanvas(tileId);
+        ctx.drawImage(tc, tx * S, ty * S);
+      });
+    });
+    return c;
+  }
+
+  // ─── Player ───────────────────────────────────────────────────────────────
+
+  spawnPlayer(classIndex: number, tileX: number, tileZ: number): BillboardSprite {
+    this.playerSprite?.removeFrom(this.scene);
+    const tex = getHeroTexture(classIndex);
+    const sp = new BillboardSprite(tex, 8, 1.1);
+    sp.setPosition(tileX + 0.5, SPRITE_Y, tileZ + 0.5);
+    sp.addTo(this.scene);
+    this.playerSprite = sp;
+
+    // Initial camera position
+    this.currentCamX = tileX + 0.5;
+    this.currentCamZ = tileZ + 0.5;
+    this.targetCamX = this.currentCamX;
+    this.targetCamZ = this.currentCamZ;
+
+    return sp;
+  }
+
+  setPlayerTile(tileX: number, tileZ: number) {
+    this.targetCamX = tileX + 0.5;
+    this.targetCamZ = tileZ + 0.5;
+  }
+
+  // ─── NPCs ─────────────────────────────────────────────────────────────────
+
+  addNpc(npc: NpcDef) {
+    if (this.npcSprites.has(npc.id)) return;
+
+    // Treasure chest — render as a 3D box, not a billboard sprite
+    if (npc.isChest) {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.32, 0.42), mat(0x5D4037));
+      body.position.y = 0.16;
+      const lid = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.18, 0.42), mat(0xDBA523));
+      lid.position.y = 0.41;
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.57, 0.06, 0.44), mat(0xFFD700));
+      band.position.y = 0.26;
+      g.add(body, lid, band);
+      g.position.set(npc.tileX + 0.5, 0, npc.tileY + 0.5);
+      this.mapGroup.add(g);
+      this.npcSprites.set(npc.id, null as unknown as BillboardSprite); // mark as placed
+      return;
+    }
+
+    const sp = new BillboardSprite(getNpcTexture(), 1, 1.0);
+    // Apply NPC color as tint (convert hex to RGB 0-1)
+    const r = ((npc.spriteColor >> 16) & 0xff) / 255;
+    const g = ((npc.spriteColor >> 8)  & 0xff) / 255;
+    const b = (npc.spriteColor & 0xff)         / 255;
+    sp.setTint(r, g, b);
+    sp.setPosition(npc.tileX + 0.5, SPRITE_Y, npc.tileY + 0.5);
+    sp.addTo(this.scene);
+    this.npcSprites.set(npc.id, sp);
+  }
+
+  // ─── Field enemies ────────────────────────────────────────────────────────
+
+  addFieldEnemy(id: string, texture: THREE.Texture, tileX: number, tileZ: number) {
+    if (this.fieldEnemySprites.has(id)) return;
+    const sp = new BillboardSprite(texture, 1, 0.78);
+    sp.setPosition(tileX + 0.5, SPRITE_Y, tileZ + 0.5);
+    sp.addTo(this.scene);
+    this.fieldEnemySprites.set(id, sp);
+  }
+
+  moveFieldEnemy(id: string, tileX: number, tileZ: number) {
+    this.fieldEnemySprites.get(id)?.setPosition(tileX + 0.5, SPRITE_Y, tileZ + 0.5);
+  }
+
+  setFieldEnemyWorldPos(id: string, worldX: number, worldZ: number) {
+    this.fieldEnemySprites.get(id)?.setPosition(worldX, SPRITE_Y, worldZ);
+  }
+
+  projectToScreen(worldX: number, worldZ: number): { x: number; y: number } | null {
+    const v = new THREE.Vector3(worldX, 1.5, worldZ);
+    v.project(this.camera);
+    if (v.z > 1) return null;
+    return {
+      x: (v.x + 1) / 2 * window.innerWidth,
+      y: (-v.y + 1) / 2 * window.innerHeight,
+    };
+  }
+
+  removeFieldEnemy(id: string) {
+    const sp = this.fieldEnemySprites.get(id);
+    if (!sp) return;
+    sp.removeFrom(this.scene);
+    this.fieldEnemySprites.delete(id);
+  }
+
+  clearFieldEnemies() {
+    this.fieldEnemySprites.forEach(sp => sp.removeFrom(this.scene));
+    this.fieldEnemySprites.clear();
+  }
+
+  // ─── Other players (multiplayer) ─────────────────────────────────────────
+
+  addOtherPlayer(id: string, classIndex: number, tileX: number, tileZ: number): BillboardSprite | null {
+    if (this.otherPlayerSprites.has(id)) return null;
+    const tex = getHeroTexture(classIndex);
+    const sp = new BillboardSprite(tex, 8, 1.1);
+    sp.setTint(0.7, 0.85, 1.0); // bluish tint
+    sp.setPosition(tileX + 0.5, SPRITE_Y, tileZ + 0.5);
+    sp.addTo(this.scene);
+    this.otherPlayerSprites.set(id, sp);
+    return sp;
+  }
+
+  updateOtherPlayer(id: string, tileX: number, tileZ: number, visible: boolean) {
+    const sp = this.otherPlayerSprites.get(id);
+    if (!sp) return;
+    sp.setVisible(visible);
+    if (visible) sp.setPosition(tileX + 0.5, SPRITE_Y, tileZ + 0.5);
+  }
+
+  removeOtherPlayer(id: string) {
+    const sp = this.otherPlayerSprites.get(id);
+    if (!sp) return;
+    sp.removeFrom(this.scene);
+    this.otherPlayerSprites.delete(id);
+  }
+
+  // ─── Camera ───────────────────────────────────────────────────────────────
+
+  update(delta: number) {
+    // Smooth camera follow (lerp toward target)
+    const alpha = 1 - Math.pow(0.005, delta / 1000);
+    this.currentCamX += (this.targetCamX - this.currentCamX) * alpha;
+    this.currentCamZ += (this.targetCamZ - this.currentCamZ) * alpha;
+
+    const x = this.currentCamX;
+    const z = this.currentCamZ;
+    this.camera.position.set(x, this.CAM_H, z + this.CAM_Z_OFFSET);
+    this.camera.lookAt(x, 0, z);
+
+    // Pulse exit ring opacity and slow rotation
+    const pulse = Math.sin(Date.now() * 0.0028) * 0.3 + 0.7;
+    this.exitMaterials.forEach(mat => { mat.opacity = pulse; });
+    this.exitMarkers.children.forEach((c, i) => {
+      (c as THREE.Mesh).rotation.z += delta * 0.0012 * (i % 2 === 0 ? 1 : -1);
+    });
+  }
+
+  render() {
+    this.composer.render();
+  }
+
+  get playerSpriteRef(): BillboardSprite | null { return this.playerSprite; }
+}
