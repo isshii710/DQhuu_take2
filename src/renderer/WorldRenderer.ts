@@ -14,11 +14,11 @@ import { BillboardSprite } from './BillboardSprite';
 const WarmGradeShader = {
   uniforms: {
     tDiffuse:   { value: null as THREE.Texture | null },
-    offset:     { value: 1.05 },  // vignette spread
-    darkness:   { value: 0.72 },  // vignette strength
-    warmth:     { value: 0.03 }, // warm tint
-    saturation: { value: 1.3 },
-    contrast:   { value: 1.1 },
+    offset:     { value: 1.1 },   // vignette spread
+    darkness:   { value: 0.55 },  // vignette strength (subtle)
+    warmth:     { value: 0.018 }, // warm tint (gentle)
+    saturation: { value: 1.18 },
+    contrast:   { value: 1.06 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -145,7 +145,7 @@ export class WorldRenderer {
   private hTiltPass!: ShaderPass;
   private vTiltPass!: ShaderPass;
   private readonly TILT_FOCUS = 0.42; // focused band (screen-space, 0=bottom .. 1=top)
-  private readonly TILT_BLUR  = 10.0;  // blur strength multiplier
+  private readonly TILT_BLUR  = 3.5;  // blur strength multiplier
 
   private mapGroup = new THREE.Group();
   private exitMarkers = new THREE.Group();
@@ -212,8 +212,8 @@ export class WorldRenderer {
 
     const renderPass = new RenderPass(this.scene, this.camera);
 
-    // Bloom — soft glow on bright tiles, lights and exit markers
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.9, 0.85, 0.38);
+    // Bloom — subtle glow only on very bright objects (exit rings, etc.)
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.28, 0.55, 0.88);
 
     // Tilt-shift — keeps a focused horizontal band, blurs near/far for the diorama feel
     this.hTiltPass = new ShaderPass(HorizontalTiltShiftShader);
