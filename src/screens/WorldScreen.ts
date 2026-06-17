@@ -95,7 +95,7 @@ export class WorldScreen {
 
     // VirtualJoystick (left side)
     const joyWrap = document.createElement('div');
-    joyWrap.style.cssText = 'position:absolute;bottom:0;left:0;width:50%;height:100px;pointer-events:auto;';
+    joyWrap.style.cssText = 'position:absolute;bottom:0;left:0;width:50%;height:140px;pointer-events:auto;';
     this.uiRoot.appendChild(joyWrap);
     this.joystick = new VirtualJoystick(joyWrap, dir => {
       this.heldDir = dir;
@@ -230,7 +230,8 @@ export class WorldScreen {
 
       // Walk frame: toggle at midpoint
       const frame = Math.floor(t * 4) % 2;
-      const dirIndex = {down:0,up:3,left:2,right:1}[this.playerDir];
+      const walkDir = this.faceDir(this.playerDir);
+      const dirIndex = {down:0,up:3,left:2,right:1}[walkDir];
       this.playerSprite?.setFrame(dirIndex * 2 + frame);
 
       if (t >= 1 && this.pendingMoveEnd) {
@@ -246,11 +247,23 @@ export class WorldScreen {
     }
   }
 
+  private faceDir(dir: Direction): 'up'|'down'|'left'|'right' {
+    if (dir === 'up-left'   || dir === 'down-left')  return 'left';
+    if (dir === 'up-right'  || dir === 'down-right') return 'right';
+    return dir as 'up'|'down'|'left'|'right';
+  }
+
   private pressedDir(): Direction | null {
-    if (this.inputKeys.up)    return 'up';
-    if (this.inputKeys.down)  return 'down';
-    if (this.inputKeys.left)  return 'left';
-    if (this.inputKeys.right) return 'right';
+    const u = this.inputKeys.up, d = this.inputKeys.down;
+    const l = this.inputKeys.left, r = this.inputKeys.right;
+    if (u && r) return 'up-right';
+    if (u && l) return 'up-left';
+    if (d && r) return 'down-right';
+    if (d && l) return 'down-left';
+    if (u) return 'up';
+    if (d) return 'down';
+    if (l) return 'left';
+    if (r) return 'right';
     return null;
   }
 
@@ -264,14 +277,15 @@ export class WorldScreen {
     const tx = this.save.position.tileX;
     const ty = this.save.position.tileY;
 
-    const [nx, ny] =
-      dir==='down'  ? [tx,   ty+1] :
-      dir==='up'    ? [tx,   ty-1] :
-      dir==='left'  ? [tx-1, ty  ] :
-                      [tx+1, ty  ];
+    let nx = tx, ny = ty;
+    if (dir === 'down' || dir === 'down-left' || dir === 'down-right') ny++;
+    if (dir === 'up'   || dir === 'up-left'   || dir === 'up-right')   ny--;
+    if (dir === 'left' || dir === 'up-left'   || dir === 'down-left')  nx--;
+    if (dir === 'right'|| dir === 'up-right'  || dir === 'down-right') nx++;
 
     this.playerDir = dir;
-    const dirIndex = {down:0,up:3,left:2,right:1}[dir];
+    const spriteDir = this.faceDir(dir);
+    const dirIndex = {down:0,up:3,left:2,right:1}[spriteDir];
     this.playerSprite?.setFrame(dirIndex * 2);
 
     if (ny<0||ny>=tiles.length||nx<0||nx>=tiles[0].length) return;
@@ -309,7 +323,7 @@ export class WorldScreen {
       this.checkEncounter(tileId);
       writeSave(this.save);
       if (this.isMultiplayer) {
-        mpManager.movePlayer(nx, ny, this.mapId, dir);
+        mpManager.movePlayer(nx, ny, this.mapId, this.faceDir(dir));
       }
       this.hudEl.update(this.save, getMapDef(this.mapId).name);
     };
@@ -391,11 +405,12 @@ export class WorldScreen {
     if (this.dialogOpen) { this.advanceDialog(); return; }
     const tx = this.save.position.tileX;
     const ty = this.save.position.tileY;
+    const fd = this.faceDir(this.playerDir);
     const [fx, fy] =
-      this.playerDir==='down'  ? [tx,   ty+1] :
-      this.playerDir==='up'    ? [tx,   ty-1] :
-      this.playerDir==='left'  ? [tx-1, ty  ] :
-                                 [tx+1, ty  ];
+      fd === 'down' ? [tx,   ty+1] :
+      fd === 'up'   ? [tx,   ty-1] :
+      fd === 'left' ? [tx-1, ty  ] :
+                      [tx+1, ty  ];
     const npc = getMapDef(this.mapId).npcs.find(n=>n.tileX===fx&&n.tileY===fy);
     if (npc) {
       if (npc.recruitId) {
