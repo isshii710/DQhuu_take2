@@ -217,6 +217,8 @@ export const MAP_DEFS: MapDef[] = [
       { id: 'npc_aria', name: 'アリア', dialogue: ['みんなのHPを回復します！'], tileX: 7, tileY: 6, spriteColor: 0xFF88CC, recruitId: 'aria' },
       { id: 'npc_galen', name: 'ガレン', dialogue: ['俺が守ってやる！'], tileX: 13, tileY: 7, spriteColor: 0xFFAA44, recruitId: 'galen' },
       { id: 'npc_elda', name: 'エルダ', dialogue: ['光の加護がありますように。'], tileX: 7, tileY: 10, spriteColor: 0xFFFFAA, recruitId: 'elda' },
+      { id: 'church', name: '神父', dialogue: ['神の祝福を。'], tileX: 17, tileY: 3, spriteColor: 0xFFFFFF, isChurch: true },
+      { id: 'medal_master', name: 'メダル親父', dialogue: ['ちいさなメダルを集めておるか？', '10枚で聖水、20枚でエリクサーと交換してやろう。'], tileX: 1, tileY: 6, spriteColor: 0xAAAA44 },
     ],
     exits: [
       { tileX: 9,  tileY: 14, targetMap: 'world', targetX: 2, targetY: 3 },

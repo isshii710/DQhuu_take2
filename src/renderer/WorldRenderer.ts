@@ -3,7 +3,6 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { HorizontalTiltShiftShader } from 'three/examples/jsm/shaders/HorizontalTiltShiftShader.js';
 import { VerticalTiltShiftShader } from 'three/examples/jsm/shaders/VerticalTiltShiftShader.js';
 import type { MapDef, NpcDef } from '../types';
@@ -17,9 +16,9 @@ const WarmGradeShader = {
     tDiffuse:   { value: null as THREE.Texture | null },
     offset:     { value: 1.05 },  // vignette spread
     darkness:   { value: 0.72 },  // vignette strength
-    warmth:     { value: 0.022 }, // warm tint
-    saturation: { value: 1.2 },
-    contrast:   { value: 1.07 },
+    warmth:     { value: 0.03 }, // warm tint
+    saturation: { value: 1.3 },
+    contrast:   { value: 1.1 },
   },
   vertexShader: /* glsl */`
     varying vec2 vUv;
@@ -145,8 +144,8 @@ export class WorldRenderer {
   private bloomPass!: UnrealBloomPass;
   private hTiltPass!: ShaderPass;
   private vTiltPass!: ShaderPass;
-  private readonly TILT_FOCUS = 0.46; // focused band (screen-space, 0=bottom .. 1=top)
-  private readonly TILT_BLUR  = 3.0;  // blur strength multiplier
+  private readonly TILT_FOCUS = 0.42; // focused band (screen-space, 0=bottom .. 1=top)
+  private readonly TILT_BLUR  = 10.0;  // blur strength multiplier
 
   private mapGroup = new THREE.Group();
   private exitMarkers = new THREE.Group();
@@ -214,7 +213,7 @@ export class WorldRenderer {
     const renderPass = new RenderPass(this.scene, this.camera);
 
     // Bloom — soft glow on bright tiles, lights and exit markers
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.5, 0.65, 0.62);
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.9, 0.85, 0.38);
 
     // Tilt-shift — keeps a focused horizontal band, blurs near/far for the diorama feel
     this.hTiltPass = new ShaderPass(HorizontalTiltShiftShader);
@@ -222,14 +221,12 @@ export class WorldRenderer {
     this.hTiltPass.uniforms['r'].value = this.TILT_FOCUS;
     this.vTiltPass.uniforms['r'].value = this.TILT_FOCUS;
 
-    const outputPass = new OutputPass();
     const gradePass = new ShaderPass(WarmGradeShader);
 
     this.composer.addPass(renderPass);
     this.composer.addPass(this.bloomPass);
     this.composer.addPass(this.hTiltPass);
     this.composer.addPass(this.vTiltPass);
-    this.composer.addPass(outputPass);
     this.composer.addPass(gradePass);
   }
 
@@ -249,8 +246,10 @@ export class WorldRenderer {
     if (this.composer) {
       this.composer.setSize(w, h);
       this.bloomPass.setSize(w, h);
-      this.hTiltPass.uniforms['h'].value = this.TILT_BLUR / w;
-      this.vTiltPass.uniforms['v'].value = this.TILT_BLUR / h;
+      if (this.hTiltPass) {
+        this.hTiltPass.uniforms['h'].value = this.TILT_BLUR / w;
+        this.vTiltPass.uniforms['v'].value = this.TILT_BLUR / h;
+      }
     }
   }
 

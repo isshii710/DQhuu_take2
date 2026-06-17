@@ -58,6 +58,8 @@ export interface CharacterSave {
   flags: Record<string, boolean>;
   party: PartyMember[];
   activeMemberIds: string[];
+  monsterBook?: Record<string, { seen: number; defeated: number }>;
+  medals?: number;
 }
 
 export interface EnemyDef {
@@ -79,7 +81,7 @@ export interface ClassDef {
   desc: string;
   baseStats: { hp: number; mp: number; atk: number; def: number; mag: number; spd: number };
   growthPerLevel: { hp: number; mp: number; atk: number; def: number; mag: number; spd: number };
-  skills: { level: number; name: string; mpCost: number; desc: string; magMult: number; targetType?: 'enemy' | 'ally' | 'all_allies' | 'self' }[];
+  skills: { level: number; name: string; mpCost: number; desc: string; magMult: number; targetType?: 'enemy' | 'ally' | 'all_allies' | 'all_enemies' | 'self' }[];
   spriteBase: number;
 }
 
@@ -144,6 +146,7 @@ export interface NpcDef {
   shopType?: 'weapon' | 'armor' | 'item';
   isChest?: boolean;
   chestPool?: string[];
+  isChurch?: boolean;
 }
 
 export interface MapDef {

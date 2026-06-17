@@ -3,7 +3,7 @@ import { COLORS } from '../config';
 import { getClassDef } from '../data/characters';
 import {
   buildCombatant, buildEnemyCombatant, buildPartyMemberCombatant, resolveAction,
-  enemyAI, applyExpGain, type Combatant,
+  enemyAI, applyExpGain, applyTurnStartEffects, isAllDefeated, type Combatant,
 } from '../systems/BattleSystem';
 import { effectiveStats } from '../systems/InventorySystem';
 import { writeSave } from '../systems/SaveSystem';
@@ -47,6 +47,7 @@ export class BattleScreen {
   private playerMarker!: HTMLElement;
 
   private onEnd!: (save: CharacterSave, mapId: string) => void;
+  private onDefeatCb?: () => void;
   private timers: ReturnType<typeof setTimeout>[] = [];
 
   // ─── Party command state ─────────────────────────────────────────────────────
@@ -75,7 +76,7 @@ export class BattleScreen {
   start(
     save: CharacterSave,
     enemies: EnemyDef[],
-    opts: { isMultiplayer: boolean; isHost: boolean; returnMap: string },
+    opts: { isMultiplayer: boolean; isHost: boolean; returnMap: string; onDefeat?: () => void },
     onEnd: (save: CharacterSave, mapId: string) => void
   ) {
     this.save = save;
@@ -83,6 +84,7 @@ export class BattleScreen {
     this.isMultiplayer = opts.isMultiplayer;
     this.isHost = opts.isHost;
     this.returnMap = opts.returnMap;
+    this.onDefeatCb = opts.onDefeat;
     this.onEnd = onEnd;
     this.timers.forEach(clearTimeout);
     this.timers = [];
@@ -414,7 +416,7 @@ export class BattleScreen {
 
     skills.forEach(s => {
       const b = document.createElement('button');
-      const targetHint = s.targetType === 'ally' ? ' 〔味方〕' : s.targetType === 'all_allies' ? ' 〔全体〕' : s.targetType === 'self' ? ' 〔自分〕' : '';
+      const targetHint = s.targetType === 'ally' ? ' 〔味方〕' : s.targetType === 'all_allies' ? ' 〔全体〕' : s.targetType === 'all_enemies' ? ' 〔全敵〕' : s.targetType === 'self' ? ' 〔自分〕' : '';
       b.textContent = `${s.name}${targetHint}  MP${s.mpCost}`;
       b.style.cssText = `padding:6px 8px;background:rgba(16,16,30,0.9);color:#FFFDE7;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;text-align:left;`;
       b.addEventListener('click', () => {
@@ -423,6 +425,8 @@ export class BattleScreen {
           this.chooseAction('magic', s.name, undefined, actor.id);
         } else if (s.targetType === 'all_allies') {
           this.chooseAction('magic', s.name, undefined, '__all_allies__');
+        } else if (s.targetType === 'all_enemies') {
+          this.chooseAction('magic', s.name, undefined, '__all_enemies__');
         } else if (s.targetType === 'ally') {
           this.buildAllyPicker(s.name, () => this.buildSkillMenu(actor));
         } else {
@@ -614,7 +618,34 @@ export class BattleScreen {
         if (action.actor.id === this.playerC.id) this.refreshPlayerBar();
       };
 
-      if (action.allyTargetId === '__all_allies__') {
+      if (action.allyTargetId === '__all_enemies__') {
+        // All-enemy magic (ギラ, イオ, etc.)
+        const livingEnemies = this.enemyCs.filter(e => e.hp > 0);
+        const cls = getClassDef(action.actor.id === this.playerC.id ? this.save.className : (this.save.party.find(p => `party_${p.id}` === action.actor.id)?.className ?? ''));
+        const s = cls.skills.find(sk => sk.name === action.spellName);
+        if (s && action.actor.mp >= s.mpCost) {
+          action.actor.mp -= s.mpCost;
+          let totalDmg = 0;
+          livingEnemies.forEach((enemy, ei) => {
+            const realIdx = this.enemyCs.indexOf(enemy);
+            const variance = 0.9 + Math.random() * 0.2;
+            const dmg = Math.max(1, Math.floor(action.actor.mag * s.magMult * variance - enemy.def * 0.3));
+            enemy.hp = Math.max(0, enemy.hp - dmg);
+            totalDmg += dmg;
+            this.showDmg(realIdx, dmg, false);
+            this.refreshEnemyBar(realIdx);
+          });
+          this.log(`${action.actor.name}は${s.name}を唱えた！全ての敵に${Math.round(totalDmg / Math.max(1, livingEnemies.length))}前後のダメージ！`);
+          if (action.actor.id === this.playerC.id) this.refreshPlayerBar();
+          else { const ci = this.companionCs.indexOf(action.actor); if (ci >= 0) this.refreshCompanionBar(ci); }
+          if (this.enemyCs[this.selectedEnemy]?.hp <= 0) {
+            const next = this.enemyCs.findIndex(e => e.hp > 0);
+            if (next >= 0) { this.selectedEnemy = next; this.updateTargetHighlight(); }
+          }
+        } else {
+          this.log('MPが足りない！');
+        }
+      } else if (action.allyTargetId === '__all_allies__') {
         // Heal / buff all allies
         const allAllies = [this.playerC, ...this.companionCs.filter(c => c.hp > 0)];
         const cls = getClassDef(action.actor.id === this.playerC.id ? this.save.className : (this.save.party.find(p => `party_${p.id}` === action.actor.id)?.className ?? ''));
@@ -793,7 +824,8 @@ export class BattleScreen {
       d += 750;
     });
     this.delay(d + 350, () => {
-      if (this.playerC.hp <= 0) { this.doDefeat(); return; }
+      const allDead = isAllDefeated([this.playerC, ...this.companionCs]);
+      if (allDead || this.playerC.hp <= 0) { this.doDefeat(); return; }
       this.startCommandPhase();
     });
   }
@@ -891,11 +923,18 @@ export class BattleScreen {
 
   private doDefeat() {
     this.phase = 'defeat';
-    this.save.stats.hp = Math.max(1, Math.floor(this.save.stats.maxHp/4));
-    this.save.position = { mapId: 'village', tileX: 9, tileY: 13 };
-    writeSave(this.save);
     this.showModal('全滅してしまった…\n\n村へ戻る', '#FF8888');
-    this.delay(2500, () => this.finish(false, false));
+    this.delay(2500, () => {
+      if (this.onDefeatCb) {
+        this.root.style.display = 'none';
+        this.onDefeatCb();
+      } else {
+        this.save.stats.hp = Math.max(1, Math.floor(this.save.stats.maxHp/4));
+        this.save.position = { mapId: 'village', tileX: 9, tileY: 13 };
+        writeSave(this.save);
+        this.finish(false, false);
+      }
+    });
   }
 
   private showModal(msg: string, color: string) {

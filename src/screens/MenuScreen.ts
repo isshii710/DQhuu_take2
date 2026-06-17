@@ -1,11 +1,12 @@
 import type { CharacterSave } from '../types';
 import type { Equipment } from '../types';
 import { ITEMS } from '../data/items';
+import { ENEMIES } from '../data/enemies';
 import { effectiveStats, equipItem, unequipSlot } from '../systems/InventorySystem';
 import { writeSave } from '../systems/SaveSystem';
 import { setActive, setBench, MAX_ACTIVE_COMPANIONS } from '../systems/PartySystem';
 
-type Tab = 'status'|'equipment'|'items'|'party';
+type Tab = 'status'|'equipment'|'items'|'party'|'field'|'book';
 
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
 
@@ -15,6 +16,7 @@ export class MenuScreen {
   private tab: Tab = 'status';
   private save!: CharacterSave;
   private onClose!: (save: CharacterSave) => void;
+  private onFieldAction?: (action: string) => void;
 
   constructor(container: HTMLElement) {
     this.root = document.createElement('div');
@@ -28,9 +30,10 @@ export class MenuScreen {
     this.root.addEventListener('click', e => { if (e.target===this.root) this.close(); });
   }
 
-  open(save: CharacterSave, onClose: (save: CharacterSave)=>void) {
+  open(save: CharacterSave, onClose: (save: CharacterSave)=>void, onFieldAction?: (action: string) => void) {
     this.save = save;
     this.onClose = onClose;
+    this.onFieldAction = onFieldAction;
     this.tab = 'status';
     this.render();
     this.root.style.display = 'flex';
@@ -66,7 +69,7 @@ export class MenuScreen {
     // Tabs
     const tabBar = document.createElement('div');
     tabBar.style.cssText='display:flex;gap:4px;padding:8px 12px 0;';
-    const tabs: {id:Tab;label:string}[] = [{id:'status',label:'ステータス'},{id:'equipment',label:'装備'},{id:'items',label:'アイテム'},{id:'party',label:'パーティ'}];
+    const tabs: {id:Tab;label:string}[] = [{id:'status',label:'ステータス'},{id:'equipment',label:'装備'},{id:'items',label:'アイテム'},{id:'party',label:'パーティ'},{id:'field',label:'フィールド'},{id:'book',label:'図鑑'}];
     tabs.forEach(t => {
       const b = document.createElement('button');
       const active = t.id===this.tab;
@@ -98,7 +101,9 @@ export class MenuScreen {
     if (this.tab==='status')    this.buildStatus();
     else if (this.tab==='equipment') this.buildEquipment();
     else if (this.tab==='items') this.buildItems();
-    else this.buildParty();
+    else if (this.tab==='party') this.buildParty();
+    else if (this.tab==='field') this.buildField();
+    else this.buildBook();
   }
 
   private buildStatus() {
@@ -288,6 +293,68 @@ export class MenuScreen {
         this.content.appendChild(row);
       });
     }
+  }
+
+  private buildField() {
+    const actions = [
+      { id: 'rula', label: '✨ ルーラ', desc: '訪れた場所へ瞬時に移動する' },
+      { id: 'releimito', label: '⬆ リレミト', desc: 'ダンジョンから脱出する' },
+    ];
+    actions.forEach(act => {
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:10px 6px;background:rgba(255,255,255,0.04);border-radius:4px;margin-bottom:8px;cursor:pointer;pointer-events:auto;';
+      const btn = document.createElement('button');
+      btn.style.cssText = `display:block;width:100%;padding:10px 0;background:rgba(16,26,56,0.9);color:#FFFDE7;border:1px solid rgba(212,175,55,0.5);border-radius:4px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;margin-bottom:4px;`;
+      btn.textContent = act.label;
+      btn.addEventListener('click', () => {
+        this.close();
+        if (this.onFieldAction) this.onFieldAction(act.id);
+      });
+      const desc = document.createElement('div');
+      desc.style.cssText = `color:#888899;font-size:11px;font-family:${FONT};padding:0 4px;`;
+      desc.textContent = act.desc;
+      row.appendChild(btn);
+      row.appendChild(desc);
+      this.content.appendChild(row);
+    });
+    const medals = this.save.medals ?? 0;
+    const medalRow = document.createElement('div');
+    medalRow.style.cssText = 'padding:8px 6px;background:rgba(255,255,255,0.04);border-radius:4px;margin-bottom:8px;';
+    medalRow.innerHTML = `<div style="display:flex;justify-content:space-between;"><span style="color:#AAAACC;font-size:12px;font-family:${FONT};">ちいさなメダル</span><span style="color:#FFD700;font-size:12px;font-family:monospace;">${medals} 枚</span></div>`;
+    this.content.appendChild(medalRow);
+  }
+
+  private buildBook() {
+    const book = this.save.monsterBook ?? {};
+    if (ENEMIES.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = `color:#444466;font-size:14px;text-align:center;padding:20px;font-family:${FONT};`;
+      empty.textContent = 'まだモンスターに出会っていない';
+      this.content.appendChild(empty);
+      return;
+    }
+    const header = document.createElement('div');
+    header.style.cssText = `color:#AAAACC;font-size:11px;margin-bottom:8px;font-family:${FONT};`;
+    const seenCount = Object.keys(book).length;
+    header.textContent = `確認済み: ${seenCount}/${ENEMIES.length} 種`;
+    this.content.appendChild(header);
+
+    ENEMIES.forEach(enemy => {
+      const entry = book[enemy.id];
+      const row = document.createElement('div');
+      row.style.cssText = 'padding:7px 6px;background:rgba(255,255,255,0.04);border-radius:4px;margin-bottom:4px;';
+      if (entry) {
+        row.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div style="color:#FFFDE7;font-size:13px;font-family:${FONT};">${enemy.name}</div>
+            <div style="color:#AAAACC;font-size:10px;font-family:monospace;">見: ${entry.seen} / 倒: ${entry.defeated}</div>
+          </div>
+        `;
+      } else {
+        row.innerHTML = `<div style="color:#444466;font-size:13px;font-family:${FONT};">？？？？</div>`;
+      }
+      this.content.appendChild(row);
+    });
   }
 
   private close() {
