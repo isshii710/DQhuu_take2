@@ -1,9 +1,10 @@
-import type { CharacterSave, MapId, Direction, NpcDef } from '../types';
+import type { CharacterSave, MapId, Direction, NpcDef, ItemDef } from '../types';
 import type { PartyMemberDef } from '../data/partyMembers';
 import { TILE_SIZE, WALKABLE, ENCOUNTER_TILES, ENCOUNTER_RATE } from '../config';
 import { getMapDef } from '../data/maps';
 import { writeSave } from '../systems/SaveSystem';
 import { randomEncounter, ENEMY_MAP, ENCOUNTER_GROUPS } from '../data/enemies';
+import { ITEM_MAP } from '../data/items';
 import { getEnemyTexture } from '../engine/TextureCache';
 import { mpManager } from '../systems/MultiplayerManager';
 import type { NetPlayer, EnemyDef } from '../types';
@@ -35,7 +36,7 @@ const MAP_FLAGS: Partial<Record<MapId, string>> = {
 };
 
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
-const MOVE_DURATION = 140; // ms per tile move
+const MOVE_DURATION = 200; // ms per tile move
 
 export interface BattleOpts { save: CharacterSave; enemies: EnemyDef[]; isMultiplayer: boolean; isHost: boolean; returnMap: MapId; }
 
@@ -84,6 +85,7 @@ export class WorldScreen {
   private preBattleMapId: MapId | null = null;
 
   private pendingClassPick: { def: PartyMemberDef } | null = null;
+  private pendingBossBattle = false;
 
   private minimapCvs: HTMLCanvasElement | null = null;
   private minimapCtx: CanvasRenderingContext2D | null = null;
@@ -388,6 +390,11 @@ export class WorldScreen {
     if (npc) {
       if (npc.isInn) {
         this.showInnDialog();
+      } else if (npc.shopType) {
+        this.showShopDialog(npc);
+      } else if (npc.id === 'boss_grosur') {
+        this.showDialogue(npc.name, npc.dialogue);
+        this.pendingBossBattle = true;
       } else if (npc.recruitId) {
         this.handleRecruitNpc(npc);
       } else {
@@ -668,7 +675,11 @@ export class WorldScreen {
     } else {
       this.dialogEl.style.display = 'none';
       this.dialogOpen = false;
-      if (this.pendingClassPick) {
+      if (this.pendingBossBattle) {
+        this.pendingBossBattle = false;
+        const boss = { ...ENEMY_MAP['grosur'] };
+        this.triggerBattle([boss]);
+      } else if (this.pendingClassPick) {
         const pick = this.pendingClassPick;
         this.pendingClassPick = null;
         this.showClassPickDialog(pick.def);
@@ -765,6 +776,15 @@ export class WorldScreen {
                       [tx+1, ty  ];
     const npc = getMapDef(this.mapId).npcs.find(n=>n.tileX===fx&&n.tileY===fy);
     if (npc) {
+      if (npc.shopType) {
+        this.showShopDialog(npc);
+        return;
+      }
+      if (npc.id === 'boss_grosur') {
+        this.showDialogue(npc.name, npc.dialogue);
+        this.pendingBossBattle = true;
+        return;
+      }
       if (npc.isInn) {
         this.showInnDialog();
       } else if (npc.recruitId) {
@@ -794,6 +814,167 @@ export class WorldScreen {
       this.save = s;
       this.hudEl.update(s, getMapDef(this.mapId).name);
     });
+  }
+
+  // ─── ショップダイアログ ──────────────────────────────────────────────────────
+
+  private showShopDialog(npc: NpcDef) {
+    if (this.dialogOpen) return;
+    this.dialogOpen = true;
+
+    const SHOP_STOCK: Record<string, string[]> = {
+      weapon: ['wood_sword','iron_sword','silver_sword','staff','crystal_staff','dagger','shadow_blade'],
+      armor:  ['cloth','leather','chain_mail','plate_mail','robe','cloth_hat','leather_hat','iron_helm','leather_ring','silver_ring','guard_bracelet','speed_boots'],
+      item:   ['herb','potion','elixir','mana_herb','ether','antidote'],
+    };
+    const stockIds = SHOP_STOCK[npc.shopType!] ?? [];
+    const stockItems = stockIds.map(id => ITEM_MAP[id]).filter(Boolean) as ItemDef[];
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);pointer-events:auto;z-index:20;`;
+
+    const box = document.createElement('div');
+    box.style.cssText = `background:rgba(10,10,30,0.97);border:2px solid rgba(212,175,55,0.7);border-radius:8px;padding:16px 18px;width:300px;font-family:${FONT};max-height:90vh;display:flex;flex-direction:column;`;
+
+    // Header
+    const header = document.createElement('div');
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;';
+    const titleEl = document.createElement('div');
+    titleEl.style.cssText = 'color:#FFD700;font-size:14px;font-weight:bold;';
+    titleEl.textContent = npc.name;
+    const goldEl = document.createElement('div');
+    goldEl.style.cssText = 'color:#FFD700;font-size:13px;';
+    const updateGold = () => { goldEl.textContent = `💰 ${this.save.gold}G`; };
+    updateGold();
+    header.appendChild(titleEl);
+    header.appendChild(goldEl);
+    box.appendChild(header);
+
+    // Tabs
+    let activeTab: 'buy' | 'sell' = 'buy';
+    const tabBar = document.createElement('div');
+    tabBar.style.cssText = 'display:flex;gap:6px;margin-bottom:10px;';
+    const listArea = document.createElement('div');
+    listArea.style.cssText = 'overflow-y:auto;flex:1;max-height:50vh;';
+
+    const renderList = () => {
+      listArea.innerHTML = '';
+      if (activeTab === 'buy') {
+        for (const item of stockItems) {
+          const row = this.makeShopRow(item, 'buy', this.save.gold, () => {
+            if (this.save.gold < item.price) return;
+            this.save.gold -= item.price;
+            const ex = this.save.inventory.find(e => e.itemId === item.id);
+            if (ex) ex.qty++;
+            else this.save.inventory.push({ itemId: item.id, qty: 1 });
+            writeSave(this.save);
+            updateGold();
+            renderList();
+            this.hudEl.update(this.save, getMapDef(this.mapId).name);
+          });
+          listArea.appendChild(row);
+        }
+      } else {
+        const sellable = this.save.inventory.filter(e => {
+          const it = ITEM_MAP[e.itemId];
+          return it && it.price > 0 && e.qty > 0;
+        });
+        if (sellable.length === 0) {
+          const empty = document.createElement('div');
+          empty.style.cssText = `color:#888899;font-size:13px;text-align:center;padding:16px;font-family:${FONT};`;
+          empty.textContent = '売れるものがない';
+          listArea.appendChild(empty);
+        }
+        for (const entry of sellable) {
+          const item = ITEM_MAP[entry.itemId]!;
+          const sellPrice = Math.floor(item.price / 2);
+          const row = this.makeShopRow(item, 'sell', 0, () => {
+            entry.qty--;
+            if (entry.qty <= 0) {
+              const idx = this.save.inventory.indexOf(entry);
+              if (idx >= 0) this.save.inventory.splice(idx, 1);
+            }
+            this.save.gold += sellPrice;
+            writeSave(this.save);
+            updateGold();
+            renderList();
+            this.hudEl.update(this.save, getMapDef(this.mapId).name);
+          }, sellPrice);
+          listArea.appendChild(row);
+        }
+      }
+    };
+
+    const mkTabBtn = (label: string, tab: 'buy' | 'sell') => {
+      const btn = document.createElement('button');
+      const style = (active: boolean) => `flex:1;padding:6px 0;border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;background:${active?'rgba(212,175,55,0.2)':'rgba(26,26,46,0.9)'};color:${active?'#FFD700':'#888899'};border:1px solid ${active?'rgba(212,175,55,0.6)':'rgba(68,68,102,0.5)'};`;
+      btn.style.cssText = style(tab === 'buy');
+      btn.textContent = label;
+      btn.addEventListener('click', () => {
+        activeTab = tab;
+        tabBar.querySelectorAll('button').forEach((b, i) => {
+          (b as HTMLButtonElement).style.cssText = style(i === (tab === 'buy' ? 0 : 1));
+        });
+        renderList();
+      });
+      return btn;
+    };
+    tabBar.appendChild(mkTabBtn('買う', 'buy'));
+    tabBar.appendChild(mkTabBtn('売る', 'sell'));
+    box.appendChild(tabBar);
+    box.appendChild(listArea);
+    renderList();
+
+    const closeBtn = document.createElement('button');
+    closeBtn.style.cssText = `margin-top:10px;display:block;width:100%;padding:8px 0;background:rgba(16,16,28,0.9);color:#888899;border:1px solid rgba(51,68,102,0.5);border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    closeBtn.textContent = 'やめる';
+    closeBtn.addEventListener('click', () => { overlay.remove(); this.dialogOpen = false; });
+    box.appendChild(closeBtn);
+    overlay.appendChild(box);
+    this.uiRoot.appendChild(overlay);
+  }
+
+  private makeShopRow(item: ItemDef, mode: 'buy' | 'sell', gold: number, onAction: () => void, sellPrice?: number): HTMLElement {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:7px 6px;border-bottom:1px solid rgba(68,68,102,0.3);';
+
+    const info = document.createElement('div');
+    info.style.cssText = 'flex:1;min-width:0;';
+    const nameEl = document.createElement('div');
+    nameEl.style.cssText = `color:#FFFDE7;font-size:13px;font-weight:bold;font-family:${FONT};`;
+    nameEl.textContent = item.name;
+    const statEl = document.createElement('div');
+    statEl.style.cssText = `color:#AAAACC;font-size:10px;font-family:${FONT};`;
+    const stats: string[] = [];
+    if (item.atk)       stats.push(`攻+${item.atk}`);
+    if (item.def)       stats.push(`防+${item.def}`);
+    if (item.mag)       stats.push(`魔+${item.mag}`);
+    if (item.spd)       stats.push(`速+${item.spd}`);
+    if (item.mhp)       stats.push(`HP+${item.mhp}`);
+    if (item.mmp)       stats.push(`MP+${item.mmp}`);
+    if (item.hpRestore) stats.push(`HP${item.hpRestore}回復`);
+    if (item.mpRestore) stats.push(`MP${item.mpRestore}回復`);
+    statEl.textContent = stats.join(' ') || item.desc;
+    info.appendChild(nameEl);
+    info.appendChild(statEl);
+
+    const right = document.createElement('div');
+    right.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:3px;margin-left:8px;';
+    const displayPrice = mode === 'buy' ? item.price : (sellPrice ?? Math.floor(item.price / 2));
+    const priceEl = document.createElement('div');
+    priceEl.style.cssText = 'color:#FFD700;font-size:12px;white-space:nowrap;';
+    priceEl.textContent = `${displayPrice}G`;
+    const canAfford = mode === 'sell' || gold >= item.price;
+    const actionBtn = document.createElement('button');
+    actionBtn.style.cssText = `padding:3px 10px;border-radius:3px;font-size:12px;font-family:${FONT};cursor:${canAfford?'pointer':'default'};pointer-events:auto;background:${canAfford?'rgba(26,46,26,0.9)':'rgba(26,26,26,0.7)'};color:${canAfford?'#AAFFAA':'#666677'};border:1px solid ${canAfford?'rgba(68,187,68,0.5)':'rgba(51,51,68,0.4)'};`;
+    actionBtn.textContent = mode === 'buy' ? '買う' : '売る';
+    actionBtn.disabled = !canAfford;
+    if (canAfford) actionBtn.addEventListener('click', onAction);
+    right.appendChild(priceEl);
+    right.appendChild(actionBtn);
+    row.appendChild(info);
+    row.appendChild(right);
+    return row;
   }
 
   // ─── 宿屋ダイアログ ──────────────────────────────────────────────────────────
