@@ -140,6 +140,7 @@ export interface NpcDef {
   tileY: number;
   spriteColor: number;
   recruitId?: string;
+  isInn?: boolean;
 }
 
 export interface MapDef {

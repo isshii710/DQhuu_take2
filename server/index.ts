@@ -48,6 +48,8 @@ interface Room {
   hostId: string;
   players: Map<string, PlayerState>;
   state: 'lobby' | 'overworld' | 'battle';
+  open: boolean;       // DQ9スタイル: 募集中かどうか
+  hostMapId?: string;  // ホストの現在マップ
   battle?: BattleState;
 }
 
@@ -84,15 +86,73 @@ function broadcastRoom(room: Room, event: string, data: unknown, excludeId?: str
 io.on('connection', (socket: Socket) => {
   console.log(`[connect] ${socket.id}`);
 
-  // Create room
+  // ── DQ9スタイル: ホストが世界を開放 ─────────────────────────────────────────
+  socket.on('open_world', (data: { player: PlayerState }) => {
+    let room = getRoomByPlayer(socket.id);
+    if (!room) {
+      const roomId = generateRoomId();
+      const player = { ...data.player, id: socket.id, ready: true };
+      room = {
+        id: roomId, hostId: socket.id,
+        players: new Map([[socket.id, player]]),
+        state: 'overworld', open: true,
+        hostMapId: data.player.mapId,
+      };
+      rooms.set(roomId, room);
+      socket.join(roomId);
+    } else {
+      room.open = true;
+      const p = room.players.get(socket.id);
+      if (p) { Object.assign(p, data.player); p.id = socket.id; }
+    }
+    socket.emit('world_opened', { roomId: room.id });
+    console.log(`[world] ${data.player.name} opened world ${room.id}`);
+  });
+
+  // ── ホストが募集終了 ──────────────────────────────────────────────────────────
+  socket.on('close_world', () => {
+    const room = getRoomByPlayer(socket.id);
+    if (!room || room.hostId !== socket.id) return;
+    room.open = false;
+    broadcastRoom(room, 'world_closed', {}, socket.id);
+    console.log(`[world] ${room.id} closed`);
+  });
+
+  // ── DQ9スタイル: ゲストが世界に参加 ──────────────────────────────────────────
+  socket.on('guest_join', (data: { roomId: string; player: PlayerState }) => {
+    const room = rooms.get(data.roomId.toUpperCase());
+    if (!room)       { socket.emit('error', { msg: 'ルームが見つかりません' }); return; }
+    if (!room.open)  { socket.emit('error', { msg: '現在募集していません' });   return; }
+    if (room.players.size >= 4) { socket.emit('error', { msg: '満員です（最大4人）' }); return; }
+
+    const player = { ...data.player, id: socket.id, ready: true };
+    room.players.set(socket.id, player);
+    socket.join(room.id);
+
+    const host = room.players.get(room.hostId);
+    // ゲストへ: ホストの世界情報を送信
+    socket.emit('world_joined', {
+      roomId: room.id,
+      mapId: room.hostMapId ?? 'village',
+      hostX: host?.x ?? 9, hostY: host?.y ?? 13,
+      players: [...room.players.values()],
+    });
+    // ホストへ: ゲスト到着通知
+    io.to(room.hostId).emit('guest_arrived', { player });
+    // 他のゲストへ
+    broadcastRoom(room, 'player_joined', { player }, socket.id);
+    io.to(room.hostId).emit('player_joined', { player });
+    console.log(`[world] ${player.name} joined ${room.id} as guest`);
+  });
+
+  // ── 旧来のロビー方式 (後方互換) ──────────────────────────────────────────────
   socket.on('create_room', (data: { player: PlayerState }) => {
     const roomId = generateRoomId();
     const player = { ...data.player, id: socket.id, ready: false };
     const room: Room = {
-      id: roomId,
-      hostId: socket.id,
+      id: roomId, hostId: socket.id,
       players: new Map([[socket.id, player]]),
-      state: 'lobby',
+      state: 'lobby', open: false,
     };
     rooms.set(roomId, room);
     socket.join(roomId);
@@ -100,12 +160,10 @@ io.on('connection', (socket: Socket) => {
     console.log(`[room] ${roomId} created by ${player.name}`);
   });
 
-  // Join room
   socket.on('join_room', (data: { roomId: string; player: PlayerState }) => {
     const room = rooms.get(data.roomId.toUpperCase());
     if (!room) { socket.emit('error', { msg: 'ルームが見つかりません' }); return; }
     if (room.players.size >= 4) { socket.emit('error', { msg: 'ルームが満員です' }); return; }
-    if (room.state !== 'lobby') { socket.emit('error', { msg: 'ゲームが既に開始しています' }); return; }
 
     const player = { ...data.player, id: socket.id, ready: false };
     room.players.set(socket.id, player);
@@ -117,13 +175,11 @@ io.on('connection', (socket: Socket) => {
     console.log(`[room] ${player.name} joined ${room.id}`);
   });
 
-  // Player ready
   socket.on('player_ready', () => {
     const room = getRoomByPlayer(socket.id);
     if (!room) return;
     const p = room.players.get(socket.id);
     if (p) p.ready = true;
-
     const allReady = [...room.players.values()].every(pl => pl.ready);
     broadcastRoom(room, 'player_ready_update', { playerId: socket.id });
     if (allReady && room.players.size >= 1) {
@@ -135,10 +191,11 @@ io.on('connection', (socket: Socket) => {
   // Player moved in overworld
   socket.on('player_move', (data: { x: number; y: number; mapId: string; dir: string }) => {
     const room = getRoomByPlayer(socket.id);
-    if (!room || room.state !== 'overworld') return;
+    if (!room) return;
     const p = room.players.get(socket.id);
     if (!p) return;
     p.x = data.x; p.y = data.y; p.mapId = data.mapId;
+    if (socket.id === room.hostId) room.hostMapId = data.mapId;
     broadcastRoom(room, 'player_moved', { playerId: socket.id, x: data.x, y: data.y, mapId: data.mapId, dir: data.dir }, socket.id);
   });
 
