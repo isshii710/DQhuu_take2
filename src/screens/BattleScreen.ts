@@ -42,6 +42,8 @@ export class BattleScreen {
   private enemyPanels: { wrap: HTMLElement; hpFill: HTMLElement; hpLabel: HTMLElement }[] = [];
   private companionPanels: { hpFill: HTMLElement; hpLabel: HTMLElement }[] = [];
   private selectedEnemy = 0;
+  private targetRings: HTMLElement[] = [];
+  private playerMarker!: HTMLElement;
 
   private onEnd!: (save: CharacterSave, mapId: string) => void;
   private timers: ReturnType<typeof setTimeout>[] = [];
@@ -73,6 +75,7 @@ export class BattleScreen {
     this.timers = [];
     this.enemyPanels = [];
     this.companionPanels = [];
+    this.targetRings = [];
 
     const stats = effectiveStats(save);
     this.playerC = buildCombatant({ ...save, stats: { ...save.stats, ...stats } });
@@ -83,6 +86,7 @@ export class BattleScreen {
     this.buildUI();
     this.root.style.display = 'flex';
     this.phase = 'intro';
+    this.updateTargetHighlight();
     this.playIntro();
     if (this.isMultiplayer) this.setupMp();
   }
@@ -112,6 +116,20 @@ export class BattleScreen {
     const count = this.enemies.length;
     this.enemies.forEach((enemy, i) => {
       const wrap = el('div','display:flex;flex-direction:column;align-items:center;gap:6px;');
+
+      // Selection ring
+      wrap.style.position = 'relative';
+      const ring = el('div', 'position:absolute;inset:-4px;border:2px solid #FFD700;border-radius:8px;display:none;pointer-events:none;');
+      wrap.appendChild(ring);
+      this.targetRings.push(ring);
+
+      // Click to select
+      wrap.style.cursor = 'pointer';
+      wrap.style.pointerEvents = 'auto';
+      wrap.addEventListener('click', () => {
+        if (this.phase !== 'command') return;
+        if (this.enemyCs[i]?.hp > 0) { this.selectedEnemy = i; this.updateTargetHighlight(); }
+      });
 
       const nameEl = el('div',`color:#FFDDDD;font-size:12px;text-align:center;text-shadow:0 1px 3px #000;`);
       nameEl.textContent = enemy.name;
@@ -151,6 +169,23 @@ export class BattleScreen {
     // ── Horizon line ──
     const horizon = el('div','position:relative;z-index:1;height:2px;background:rgba(68,34,34,0.7);flex-shrink:0;');
     this.root.appendChild(horizon);
+
+    // ── Player marker ──
+    const classColors: Record<string, string> = {'戦士':'#FF6644','魔法使い':'#6688FF','回復師':'#44CC88','盗賊':'#FFAA22'};
+    const color = classColors[this.save.className] ?? '#88AAFF';
+    const classChars: Record<string, string> = {'戦士':'戦','魔法使い':'魔','回復師':'癒','盗賊':'盗'};
+    this.playerMarker = el('div', `
+      position:absolute;
+      width:52px;height:52px;border-radius:50%;
+      background:${color};border:2px solid #fff;
+      display:flex;align-items:center;justify-content:center;
+      color:#fff;font-size:16px;font-family:monospace;font-weight:bold;
+      bottom:130px;left:50%;transform:translateX(-50%);
+      z-index:5;pointer-events:none;
+      transition:transform 0.18s ease-in, opacity 0.18s;
+    `);
+    this.playerMarker.textContent = classChars[this.save.className] ?? '主';
+    this.root.appendChild(this.playerMarker);
 
     // ── Player panel ──
     const panel = el('div',`
@@ -262,6 +297,7 @@ export class BattleScreen {
       grid.appendChild(b);
     });
     this.commandEl.appendChild(grid);
+    this.updateTargetHighlight();
   }
 
   private buildSkillMenu() {
@@ -332,20 +368,93 @@ export class BattleScreen {
 
     const target = this.enemyCs[this.selectedEnemy];
     const action = { actorId: this.playerC.id, type, targetId: target?.id, spellName, itemId };
-    const result = resolveAction(this.playerC, action, target ?? this.playerC);
-    this.log(result.text);
-    if (result.damage) this.showDmg(this.selectedEnemy, result.damage, false);
-    this.refreshEnemyBar(this.selectedEnemy);
-    this.refreshPlayerBar();
 
-    if (type === 'run') { this.delay(800, () => this.finish(false, true)); return; }
+    const doResolve = () => {
+      const result = resolveAction(this.playerC, action, target ?? this.playerC);
+      this.log(result.text);
+      if (result.damage) this.showDmg(this.selectedEnemy, result.damage, false);
+      this.refreshEnemyBar(this.selectedEnemy);
+      this.refreshPlayerBar();
 
-    this.delay(900, () => {
-      if (this.enemyCs.every(e => e.hp <= 0)) { this.doVictory(); return; }
-      this.doCompanionTurns(() => {
+      // Auto-switch target to next living enemy
+      if (this.enemyCs[this.selectedEnemy]?.hp <= 0) {
+        const next = this.enemyCs.findIndex(e => e.hp > 0);
+        if (next >= 0) { this.selectedEnemy = next; this.updateTargetHighlight(); }
+      }
+
+      if (type === 'run') { this.delay(800, () => this.finish(false, true)); return; }
+
+      this.delay(900, () => {
         if (this.enemyCs.every(e => e.hp <= 0)) { this.doVictory(); return; }
-        this.doEnemyTurns();
+        this.doCompanionTurns(() => {
+          if (this.enemyCs.every(e => e.hp <= 0)) { this.doVictory(); return; }
+          this.doEnemyTurns();
+        });
       });
+    };
+
+    if ((type === 'attack' || type === 'magic') && target && target.hp > 0) {
+      this.animateStepIn(this.selectedEnemy, type === 'magic').then(doResolve);
+    } else {
+      doResolve();
+    }
+  }
+
+  // ─── Step-in animation ──────────────────────────────────────────────────────
+
+  private animateStepIn(enemyIndex: number, isMagic: boolean): Promise<void> {
+    return new Promise(resolve => {
+      const panel = this.enemyPanels[enemyIndex];
+      if (!panel || !this.playerMarker) { resolve(); return; }
+
+      const rootRect = this.root.getBoundingClientRect();
+      const enemyRect = panel.wrap.getBoundingClientRect();
+
+      const dx = enemyRect.left - rootRect.left + enemyRect.width/2 - rootRect.width/2;
+      const dy = -(rootRect.height - 130 - (rootRect.height - (enemyRect.top - rootRect.top) - enemyRect.height/2));
+
+      // Step toward enemy
+      this.playerMarker.style.transition = 'transform 0.18s ease-in';
+      this.playerMarker.style.transform = `translateX(calc(-50% + ${dx}px)) translateY(${dy * 0.7}px)`;
+
+      setTimeout(() => {
+        // Flash enemy red
+        panel.wrap.style.filter = 'brightness(3) saturate(0) sepia(1) hue-rotate(-10deg)';
+
+        // Shake
+        panel.wrap.style.transition = 'transform 0.05s';
+        panel.wrap.style.transform = 'translateX(-8px)';
+        setTimeout(() => panel.wrap.style.transform = 'translateX(8px)', 60);
+        setTimeout(() => panel.wrap.style.transform = 'translateX(-5px)', 120);
+        setTimeout(() => { panel.wrap.style.transform = 'translateX(0)'; panel.wrap.style.filter = ''; }, 200);
+
+        // For magic: shoot a projectile
+        if (isMagic) {
+          const orb = el('div', `
+            position:absolute;width:14px;height:14px;border-radius:50%;
+            background:#AACCFF;box-shadow:0 0 12px #88AAFF;
+            pointer-events:none;z-index:15;
+            transition:all 0.15s linear;
+          `);
+          const px = rootRect.width/2 - 7;
+          const py = rootRect.height - 130 - 26;
+          orb.style.left = px + 'px';
+          orb.style.top = py + 'px';
+          this.root.appendChild(orb);
+          requestAnimationFrame(() => {
+            orb.style.left = (enemyRect.left - rootRect.left + enemyRect.width/2 - 7) + 'px';
+            orb.style.top = (enemyRect.top - rootRect.top + enemyRect.height/2 - 7) + 'px';
+          });
+          setTimeout(() => orb.remove(), 200);
+        }
+
+        // Step back
+        setTimeout(() => {
+          this.playerMarker.style.transition = 'transform 0.15s ease-out';
+          this.playerMarker.style.transform = 'translateX(-50%)';
+          setTimeout(resolve, 180);
+        }, 220);
+      }, 200);
     });
   }
 
@@ -432,7 +541,10 @@ export class BattleScreen {
     p.hpFill.style.width = pct + '%';
     p.hpFill.style.background = pct > 50 ? '#dd3322' : '#ff5500';
     p.hpLabel.textContent = `HP ${e.hp}`;
-    if (e.hp <= 0) p.wrap.style.opacity = '0.25';
+    if (e.hp <= 0) {
+      p.wrap.style.opacity = '0';
+      p.wrap.style.pointerEvents = 'none';
+    }
   }
 
   private refreshCompanionBar(i: number) {
@@ -454,6 +566,14 @@ export class BattleScreen {
     this.playerMpFill.style.width = mp + '%';
     this.playerHpLabel.textContent = `HP ${p.hp}/${p.maxHp}`;
     this.playerMpLabel.textContent = `MP ${p.mp}/${p.maxMp}`;
+  }
+
+  // ─── Target highlight ───────────────────────────────────────────────────────
+
+  private updateTargetHighlight() {
+    this.targetRings.forEach((ring, i) => {
+      ring.style.display = (i === this.selectedEnemy && this.enemyCs[i]?.hp > 0) ? 'block' : 'none';
+    });
   }
 
   // ─── Floating damage numbers ─────────────────────────────────────────────────
