@@ -98,9 +98,9 @@ export class WorldScreen {
     `;
     this.uiRoot.appendChild(ctrlBar);
 
-    // VirtualJoystick (left side)
+    // VirtualJoystick — covers left 60% full height (floating, appears at touch)
     const joyWrap = document.createElement('div');
-    joyWrap.style.cssText = 'position:absolute;bottom:0;left:0;width:50%;height:140px;pointer-events:auto;';
+    joyWrap.style.cssText = 'position:absolute;top:0;bottom:100px;left:0;width:60%;pointer-events:auto;';
     this.uiRoot.appendChild(joyWrap);
     this.joystick = new VirtualJoystick(joyWrap, dir => {
       this.heldDir = dir;
@@ -116,7 +116,7 @@ export class WorldScreen {
     this.uiRoot.appendChild(btnWrap);
 
     this.menuBtn  = this.makeBtn('M', '#AABBFF', '#8899FF', () => this.openMenu());
-    this.actionBtn = this.makeBtn('A', '#FFD700', '#FFDD66', () => this.onActionButton());
+    this.actionBtn = this.makeBtn('話す', '#FFD700', '#FFDD66', () => this.onActionButton());
     btnWrap.appendChild(this.menuBtn);
     btnWrap.appendChild(this.actionBtn);
 
@@ -150,10 +150,10 @@ export class WorldScreen {
   private makeBtn(label: string, color: string, border: string, onClick: ()=>void): HTMLButtonElement {
     const b = document.createElement('button');
     b.style.cssText = `
-      width:48px;height:48px;border-radius:50%;
+      min-width:48px;height:48px;padding:0 10px;border-radius:24px;
       background:rgba(255,255,255,0.12);
       border:2px solid ${border}88;
-      color:${color};font-size:18px;font-weight:bold;
+      color:${color};font-size:14px;font-weight:bold;
       font-family:${FONT};cursor:pointer;pointer-events:auto;
       text-shadow:0 1px 3px #000;
     `;

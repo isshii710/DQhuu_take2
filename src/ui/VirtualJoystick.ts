@@ -6,11 +6,10 @@ export class VirtualJoystick {
   private root: HTMLElement;
   private outer: HTMLElement;
   private knob: HTMLElement;
-  private zone: HTMLElement;
 
-  private active = false;
-  private centerX = 0;
-  private centerY = 0;
+  private touchId: number | null = null;
+  private pivotX = 0;
+  private pivotY = 0;
   private currentDir: Direction | null = null;
   private repeatTimer: ReturnType<typeof setInterval> | null = null;
   private onDir: JoystickCallback;
@@ -18,90 +17,125 @@ export class VirtualJoystick {
   private readonly OUTER_R = 44;
   private readonly INNER_R = 20;
   private readonly DEAD = 10;
-  private readonly REPEAT_MS = 150;
+  private readonly REPEAT_MS = 140;
 
   constructor(container: HTMLElement, onDir: JoystickCallback) {
     this.onDir = onDir;
 
+    // Touch zone covers the entire container area
     this.root = document.createElement('div');
     this.root.style.cssText = `
-      position: absolute;
-      bottom: 0; left: 0;
-      width: 100%; height: 100%;
+      position: absolute; inset: 0;
       pointer-events: auto;
-      display: flex; align-items: flex-end; justify-content: flex-start;
-      padding-left: 20px;
-      padding-bottom: 28px;
-      box-sizing: border-box;
     `;
 
+    // Outer ring: initially hidden, positioned absolutely at touch point
     this.outer = document.createElement('div');
     this.outer.style.cssText = `
-      width: ${this.OUTER_R*2}px; height: ${this.OUTER_R*2}px;
+      display: none;
+      position: absolute;
+      width: ${this.OUTER_R * 2}px; height: ${this.OUTER_R * 2}px;
       border-radius: 50%;
       background: rgba(255,255,255,0.10);
-      border: 2px solid rgba(255,255,255,0.28);
-      position: relative;
-      flex-shrink: 0;
-      pointer-events: auto;
+      border: 2px solid rgba(255,255,255,0.40);
+      pointer-events: none;
     `;
 
     this.knob = document.createElement('div');
     this.knob.style.cssText = `
       position: absolute;
-      width: ${this.INNER_R*2}px; height: ${this.INNER_R*2}px;
+      width: ${this.INNER_R * 2}px; height: ${this.INNER_R * 2}px;
       border-radius: 50%;
-      background: rgba(255,255,255,0.55);
+      background: rgba(255,255,255,0.60);
       top: 50%; left: 50%;
       transform: translate(-50%, -50%);
       pointer-events: none;
-      transition: none;
     `;
     this.outer.appendChild(this.knob);
-
-    // Large transparent touch zone
-    this.zone = document.createElement('div');
-    this.zone.style.cssText = `
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
-      pointer-events: auto;
-    `;
-
     this.root.appendChild(this.outer);
-    this.root.appendChild(this.zone);
     container.appendChild(this.root);
 
-    this.zone.addEventListener('touchstart', this.onTouchStart, { passive: false });
-    this.zone.addEventListener('touchmove',  this.onTouchMove,  { passive: false });
-    this.zone.addEventListener('touchend',   this.onTouchEnd,   { passive: false });
-    this.zone.addEventListener('touchcancel',this.onTouchEnd,   { passive: false });
+    this.root.addEventListener('touchstart', this.onTouchStart, { passive: false });
+    window.addEventListener('touchmove',  this.onTouchMove,  { passive: false });
+    window.addEventListener('touchend',   this.onTouchEnd,   { passive: false });
+    window.addEventListener('touchcancel',this.onTouchEnd,   { passive: false });
 
-    // Mouse support for desktop testing
-    this.zone.addEventListener('mousedown', this.onMouseDown);
+    // Mouse support for desktop
+    this.root.addEventListener('mousedown', this.onMouseDown);
   }
 
-  private getBounds() {
-    const rect = this.outer.getBoundingClientRect();
-    return { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
+  private onTouchStart = (e: TouchEvent) => {
+    if (this.touchId !== null) return;
+    e.preventDefault();
+    const touch = e.changedTouches[0];
+    this.touchId = touch.identifier;
+    this.showAt(touch.clientX, touch.clientY);
+    this.process(touch.clientX, touch.clientY);
+  };
+
+  private onTouchMove = (e: TouchEvent) => {
+    if (this.touchId === null) return;
+    for (const touch of e.changedTouches) {
+      if (touch.identifier === this.touchId) {
+        e.preventDefault();
+        this.process(touch.clientX, touch.clientY);
+        return;
+      }
+    }
+  };
+
+  private onTouchEnd = (e: TouchEvent) => {
+    for (const touch of e.changedTouches) {
+      if (touch.identifier === this.touchId) {
+        this.touchId = null;
+        this.hide();
+        return;
+      }
+    }
+  };
+
+  private onMouseDown = (e: MouseEvent) => {
+    this.showAt(e.clientX, e.clientY);
+    this.process(e.clientX, e.clientY);
+    const onMove = (ev: MouseEvent) => this.process(ev.clientX, ev.clientY);
+    const onUp   = () => {
+      this.hide();
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  private showAt(clientX: number, clientY: number) {
+    this.pivotX = clientX;
+    this.pivotY = clientY;
+    const rect = this.root.getBoundingClientRect();
+    this.outer.style.left = (clientX - rect.left - this.OUTER_R) + 'px';
+    this.outer.style.top  = (clientY - rect.top  - this.OUTER_R) + 'px';
+    this.outer.style.display = 'block';
+    this.knob.style.transform = 'translate(-50%, -50%)';
+  }
+
+  private hide() {
+    this.outer.style.display = 'none';
+    this.setDir(null);
   }
 
   private process(clientX: number, clientY: number) {
-    const { cx, cy } = this.getBounds();
-    let dx = clientX - cx;
-    let dy = clientY - cy;
-    const dist = Math.sqrt(dx*dx + dy*dy);
+    const dx = clientX - this.pivotX;
+    const dy = clientY - this.pivotY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
     const r = this.OUTER_R;
 
-    if (dist > r) { dx = (dx/dist)*r; dy = (dy/dist)*r; }
-    this.knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    let kx = dx, ky = dy;
+    if (dist > r) { kx = (dx / dist) * r; ky = (dy / dist) * r; }
+    this.knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
 
-    if (dist < this.DEAD) {
-      this.setDir(null);
-      return;
-    }
-    // 8-way: use angle sectors of 45° each
-    const angle = Math.atan2(dy, dx) * 180 / Math.PI; // 0=right,90=down
+    if (dist < this.DEAD) { this.setDir(null); return; }
+
+    // 8-way direction via angle sectors of 45°
+    const angle = Math.atan2(dy, dx) * 180 / Math.PI;
     const a = ((angle % 360) + 360) % 360;
     let newDir: Direction;
     if      (a >= 337.5 || a < 22.5)  newDir = 'right';
@@ -125,42 +159,11 @@ export class VirtualJoystick {
     }
   }
 
-  private resetKnob() {
-    this.knob.style.transform = 'translate(-50%, -50%)';
-    this.setDir(null);
-    this.active = false;
-  }
-
-  private onTouchStart = (e: TouchEvent) => {
-    e.preventDefault();
-    this.active = true;
-    const t = e.touches[0];
-    this.process(t.clientX, t.clientY);
-  };
-  private onTouchMove = (e: TouchEvent) => {
-    e.preventDefault();
-    if (!this.active) return;
-    const t = e.touches[0];
-    this.process(t.clientX, t.clientY);
-  };
-  private onTouchEnd = (e: TouchEvent) => {
-    e.preventDefault();
-    this.resetKnob();
-  };
-
-  // ─── Mouse (desktop) ─────────────────────────────────────────────────────
-
-  private onMouseDown = (e: MouseEvent) => {
-    this.active = true;
-    this.process(e.clientX, e.clientY);
-    const onMove = (ev: MouseEvent) => { if (this.active) this.process(ev.clientX, ev.clientY); };
-    const onUp   = () => { this.resetKnob(); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-  };
-
   destroy() {
     if (this.repeatTimer) clearInterval(this.repeatTimer);
+    window.removeEventListener('touchmove',  this.onTouchMove);
+    window.removeEventListener('touchend',   this.onTouchEnd);
+    window.removeEventListener('touchcancel',this.onTouchEnd);
     this.root.remove();
   }
 }
