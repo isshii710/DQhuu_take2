@@ -210,6 +210,16 @@ function build3DObject(tileId: number): THREE.Object3D | null {
   }
 }
 
+function applyShadow(obj: THREE.Object3D): void {
+  obj.traverse(child => {
+    if ((child as THREE.Mesh).isMesh) {
+      const m = child as THREE.Mesh;
+      m.castShadow = true;
+      m.receiveShadow = true;
+    }
+  });
+}
+
 // ─── WorldRenderer ────────────────────────────────────────────────────────────
 
 export class WorldRenderer {
@@ -231,7 +241,15 @@ export class WorldRenderer {
   private ambientLight!: THREE.AmbientLight;
   private sunLight!: THREE.DirectionalLight;
   private buildingLights: THREE.PointLight[] = [];
+  private playerLantern: THREE.PointLight | null = null;
   private playerLight: THREE.PointLight | null = null;
+  private chestGroups = new Map<string, { lid: THREE.Mesh; opened: boolean }>();
+
+  private blobShadowGroup = new THREE.Group();
+  private blobShadowMat: THREE.MeshBasicMaterial | null = null;
+  private playerBlob: THREE.Mesh | null = null;
+  private npcBlobs = new Map<string, THREE.Mesh>();
+  private enemyBlobs = new Map<string, THREE.Mesh>();
 
   private targetCamX = 0;
   private targetCamZ = 0;
@@ -246,6 +264,8 @@ export class WorldRenderer {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(0x0a0a1a);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(0x0a0a1a, 30, 60);
@@ -258,12 +278,22 @@ export class WorldRenderer {
     this.ambientLight = new THREE.AmbientLight(0xffe6c4, 0.62);
     this.sunLight = new THREE.DirectionalLight(0xfff2d6, 1.15);
     this.sunLight.position.set(6, 14, -3);
+    this.sunLight.castShadow = true;
+    this.sunLight.shadow.mapSize.set(1024, 1024);
+    this.sunLight.shadow.camera.near = 0.5;
+    this.sunLight.shadow.camera.far = 50;
+    this.sunLight.shadow.camera.left   = -10;
+    this.sunLight.shadow.camera.right  =  10;
+    this.sunLight.shadow.camera.top    =  10;
+    this.sunLight.shadow.camera.bottom = -10;
+    this.sunLight.shadow.bias = -0.002;
     const fill = new THREE.DirectionalLight(0x6688cc, 0.35);
     fill.position.set(-6, 8, 6);
-    this.scene.add(this.ambientLight, this.sunLight, fill);
+    this.scene.add(this.ambientLight, this.sunLight, this.sunLight.target, fill);
 
     this.scene.add(this.mapGroup);
     this.scene.add(this.exitMarkers);
+    this.scene.add(this.blobShadowGroup);
 
     this.setupComposer(canvas);
     this.onResize();
@@ -412,6 +442,7 @@ export class WorldRenderer {
     this.mapGroup.clear();
     this.npcSprites.forEach(s => s?.removeFrom(this.scene));
     this.npcSprites.clear();
+    this.chestGroups.clear();
     this.clearFieldEnemies();
 
     // Remove previous building lights
@@ -431,6 +462,11 @@ export class WorldRenderer {
       this.renderer.setClearColor(0x0a0a1a);
     }
 
+    // Player-carried lantern: warm glow in dungeons, subtle outdoors
+    if (this.playerLantern) this.scene.remove(this.playerLantern);
+    this.playerLantern = new THREE.PointLight(0xFFCC66, isOutdoor ? 0.0 : 1.8, isOutdoor ? 0 : 10);
+    this.scene.add(this.playerLantern);
+
     // Terrain
     const groundCanvas = this.buildGroundCanvas(mapDef.tiles, cols, rows);
     const groundTex = new THREE.CanvasTexture(groundCanvas);
@@ -440,7 +476,14 @@ export class WorldRenderer {
     const groundGeo = this.buildTerrainGeometry(mapDef.tiles, cols, rows);
     const groundMat = new THREE.MeshLambertMaterial({ map: groundTex });
     const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.receiveShadow = true;
     this.mapGroup.add(ground);
+
+    // Clear blob shadows from previous map
+    this.blobShadowGroup.clear();
+    this.playerBlob = null;
+    this.npcBlobs.clear();
+    this.enemyBlobs.clear();
 
     // 3D objects + warm point lights inside buildings
     for (let ty = 0; ty < rows; ty++) {
@@ -448,18 +491,19 @@ export class WorldRenderer {
         const tileId = mapDef.tiles[ty][tx];
         const obj = build3DObject(tileId);
         if (obj) {
+          applyShadow(obj);
           const h = TILE_H[tileId] ?? 0;
           obj.position.set(tx + 0.5, h, ty + 0.5);
           this.mapGroup.add(obj);
 
           // Warm point light inside village buildings and castle
           if (tileId === T.VILLAGE) {
-            const pl = new THREE.PointLight(0xFF9933, 0.9, 3.5);
+            const pl = new THREE.PointLight(0xFF9933, 1.4, 9.0);
             pl.position.set(tx + 0.5, h + 0.4, ty + 0.5);
             this.scene.add(pl);
             this.buildingLights.push(pl);
           } else if (tileId === T.CASTLE) {
-            const pl = new THREE.PointLight(0x99CCFF, 0.7, 4.0);
+            const pl = new THREE.PointLight(0x99CCFF, 1.1, 10.0);
             pl.position.set(tx + 0.5, h + 0.7, ty + 0.5);
             this.scene.add(pl);
             this.buildingLights.push(pl);
@@ -505,11 +549,17 @@ export class WorldRenderer {
 
   spawnPlayer(classIndex: number, tileX: number, tileZ: number): BillboardSprite {
     this.playerSprite?.removeFrom(this.scene);
+    if (this.playerBlob) this.blobShadowGroup.remove(this.playerBlob);
+
     const tex = getHeroTexture(classIndex);
     const sp = new BillboardSprite(tex, 8, 1.1);
     sp.setPosition(tileX + 0.5, SPRITE_Y, tileZ + 0.5);
     sp.addTo(this.scene);
     this.playerSprite = sp;
+
+    this.playerBlob = this.makeBlobMesh(0.65);
+    this.playerBlob.position.set(tileX + 0.5, 0.01, tileZ + 0.5);
+    this.blobShadowGroup.add(this.playerBlob);
 
     this.currentCamX = tileX + 0.5;
     this.currentCamZ = tileZ + 0.5;
@@ -538,6 +588,8 @@ export class WorldRenderer {
       const band = new THREE.Mesh(new THREE.BoxGeometry(0.57, 0.06, 0.44), mat(0xFFD700));
       band.position.y = 0.26;
       g.add(body, lid, band);
+      applyShadow(g);
+      this.chestGroups.set(npc.id, { lid, opened: false });
       g.position.set(npc.tileX + 0.5, 0, npc.tileY + 0.5);
       this.mapGroup.add(g);
       this.npcSprites.set(npc.id, null as unknown as BillboardSprite);
@@ -552,6 +604,12 @@ export class WorldRenderer {
     sp.setPosition(npc.tileX + 0.5, SPRITE_Y, npc.tileY + 0.5);
     sp.addTo(this.scene);
     this.npcSprites.set(npc.id, sp);
+
+    // Static blob shadow for NPC (NPCs don't move)
+    const npcBlob = this.makeBlobMesh(0.55);
+    npcBlob.position.set(npc.tileX + 0.5, 0.01, npc.tileY + 0.5);
+    this.blobShadowGroup.add(npcBlob);
+    this.npcBlobs.set(npc.id, npcBlob);
   }
 
   // ─── Field enemies ────────────────────────────────────────────────────────
@@ -562,6 +620,11 @@ export class WorldRenderer {
     sp.setPosition(tileX + 0.5, SPRITE_Y, tileZ + 0.5);
     sp.addTo(this.scene);
     this.fieldEnemySprites.set(id, sp);
+
+    const blob = this.makeBlobMesh(0.5);
+    blob.position.set(tileX + 0.5, 0.01, tileZ + 0.5);
+    this.blobShadowGroup.add(blob);
+    this.enemyBlobs.set(id, blob);
   }
 
   moveFieldEnemy(id: string, tileX: number, tileZ: number) {
@@ -587,11 +650,15 @@ export class WorldRenderer {
     if (!sp) return;
     sp.removeFrom(this.scene);
     this.fieldEnemySprites.delete(id);
+    const blob = this.enemyBlobs.get(id);
+    if (blob) { this.blobShadowGroup.remove(blob); this.enemyBlobs.delete(id); }
   }
 
   clearFieldEnemies() {
     this.fieldEnemySprites.forEach(sp => sp.removeFrom(this.scene));
     this.fieldEnemySprites.clear();
+    this.enemyBlobs.forEach(b => this.blobShadowGroup.remove(b));
+    this.enemyBlobs.clear();
   }
 
   // ─── Other players ────────────────────────────────────────────────────────
@@ -621,6 +688,47 @@ export class WorldRenderer {
     this.otherPlayerSprites.delete(id);
   }
 
+  openChest(npcId: string) {
+    const chest = this.chestGroups.get(npcId);
+    if (!chest || chest.opened) return;
+    chest.opened = true;
+    const startTime = Date.now();
+    const duration = 500;
+    const animate = () => {
+      const t = Math.min(1, (Date.now() - startTime) / duration);
+      chest.lid.rotation.x = -Math.PI * 0.7 * t;
+      if (t < 1) requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
+  }
+
+  private makeBlobMesh(size: number): THREE.Mesh {
+    if (!this.blobShadowMat) {
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const ctx = c.getContext('2d')!;
+      const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 30);
+      grad.addColorStop(0, 'rgba(0,0,0,0.5)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 64, 64);
+      const tex = new THREE.CanvasTexture(c);
+      this.blobShadowMat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        depthWrite: false,
+        opacity: 1,
+      });
+    }
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(size, size * 0.55),
+      this.blobShadowMat,
+    );
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.renderOrder = -1;
+    return mesh;
+  }
+
   // ─── Update / render ──────────────────────────────────────────────────────
 
   update(delta: number) {
@@ -632,6 +740,22 @@ export class WorldRenderer {
     const z = this.currentCamZ;
     this.camera.position.set(x, this.CAM_H, z + this.CAM_Z_OFFSET);
     this.camera.lookAt(x, 0, z);
+
+    // Keep shadow frustum centred on the visible area
+    this.sunLight.position.set(x + 6, 14, z - 3);
+    this.sunLight.target.position.set(x, 0, z);
+    this.sunLight.target.updateMatrixWorld();
+
+    // Sync blob shadow + lantern to player position
+    if (this.playerSprite) {
+      const p = this.playerSprite.sprite.position;
+      if (this.playerBlob) this.playerBlob.position.set(p.x, 0.01, p.z);
+      if (this.playerLantern) this.playerLantern.position.set(p.x, 1.2, p.z);
+    }
+    this.fieldEnemySprites.forEach((sp, id) => {
+      const blob = this.enemyBlobs.get(id);
+      if (blob && sp) blob.position.set(sp.sprite.position.x, 0.01, sp.sprite.position.z);
+    });
 
     if (this.skyDome) {
       this.skyDome.position.set(x, 0, z);
@@ -653,6 +777,12 @@ export class WorldRenderer {
     this.exitMaterials.forEach(m => { m.opacity = pulse; });
     this.exitMarkers.children.forEach((c, i) => {
       (c as THREE.Mesh).rotation.z += delta * 0.0012 * (i % 2 === 0 ? 1 : -1);
+    });
+
+    // NPC sprite idle bob
+    const npcBob = Math.sin(Date.now() * 0.0018) * 0.04;
+    this.npcSprites.forEach(sp => {
+      if (sp) sp.sprite.position.y = SPRITE_Y + npcBob;
     });
   }
 

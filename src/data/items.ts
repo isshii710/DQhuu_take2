@@ -22,6 +22,7 @@ export const CRAFT_RECIPES: CraftRecipe[] = [
 
 export const ITEMS: ItemDef[] = [
   // ─── Consumables ─────────────────────────────────────────────────────────
+  { id: 'gacha_ticket', name: 'ガチャ券', type: 'consumable', desc: '宝の地図ガチャを1回引ける。メニューの「宝の地図」から使用', price: 0 },
   { id: 'herb',      name: '薬草',     type: 'consumable', desc: 'HPを30回復する',       price: 20,  hpRestore: 30 },
   { id: 'potion',    name: 'ポーション',type: 'consumable', desc: 'HPを80回復する',       price: 60,  hpRestore: 80 },
   { id: 'elixir',    name: '万能薬',   type: 'consumable', desc: 'HPを完全回復する',      price: 150, hpRestore: 9999 },

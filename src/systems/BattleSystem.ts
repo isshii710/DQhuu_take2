@@ -15,6 +15,9 @@ export interface Combatant {
   spd: number;
   isEnemy: boolean;
   statusEffects: Set<string>;
+  evasion?: number;
+  fleeChance?: number;
+  fled?: boolean;
 }
 
 export interface BattleAction {
@@ -83,6 +86,9 @@ export function buildEnemyCombatant(e: EnemyDef, index: number): Combatant {
     spd: e.spd,
     isEnemy: true,
     statusEffects: new Set(),
+    evasion: e.evasion ?? 0,
+    fleeChance: e.fleeChance ?? 0,
+    fled: false,
   };
 }
 
@@ -91,6 +97,10 @@ export function resolveAction(actor: Combatant, action: BattleAction, target: Co
     // If attacker is blind, 40% chance to miss
     if (actor.statusEffects.has('blind') && Math.random() < 0.4) {
       return { actorId: actor.id, targetId: target.id, type: 'attack', missed: true, text: `${actor.name}の攻撃！ しかし外れた！` };
+    }
+    // Evasion check (metal/rare monsters)
+    if ((target as any).evasion && Math.random() * 100 < (target as any).evasion) {
+      return { actorId: actor.id, targetId: target.id, type: 'attack', missed: true, text: `${actor.name}の攻撃！ しかし${target.name}にかわされた！` };
     }
     const variance = 0.9 + Math.random() * 0.2;
     const atkMult = actor.statusEffects.has('atk_up') ? 1.5 : 1.0;
@@ -235,6 +245,10 @@ export function isAllDefeated(combatants: Combatant[]): boolean {
 }
 
 export function enemyAI(enemy: Combatant, players: Combatant[]): BattleAction {
+  // Flee check (metal series)
+  if ((enemy as any).fleeChance && Math.random() * 100 < (enemy as any).fleeChance) {
+    return { actorId: enemy.id, type: 'run' };
+  }
   const alive = players.filter(p => p.hp > 0);
   if (alive.length === 0) return { actorId: enemy.id, type: 'skip' };
   const target = alive[Math.floor(Math.random() * alive.length)];

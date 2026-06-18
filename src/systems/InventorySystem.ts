@@ -51,6 +51,25 @@ export function unequipSlot(save: CharacterSave, slot: keyof Equipment): void {
   recalcEquipStats(save);
 }
 
+export function memberEquipItem(save: CharacterSave, member: PartyMember, itemId: string): string | null {
+  const item = getItem(itemId);
+  if (!item) return '不明なアイテムです';
+  if (item.type === 'consumable') return 'このアイテムは装備できません';
+  const slot = item.type as keyof Equipment;
+  const prev = member.equipment[slot];
+  if (prev) addItem(save, prev);
+  member.equipment[slot] = itemId;
+  removeItem(save, itemId);
+  return null;
+}
+
+export function memberUnequipSlot(save: CharacterSave, member: PartyMember, slot: keyof Equipment): void {
+  const itemId = member.equipment[slot];
+  if (!itemId) return;
+  addItem(save, itemId);
+  member.equipment[slot] = null;
+}
+
 export function recalcEquipStats(save: CharacterSave): void {
   // Equipment bonuses are additive on top of base class stats
   // (stats are stored directly on save.stats; base stats already from level-up)
@@ -115,23 +134,4 @@ export function memberEffectiveStats(member: PartyMember) {
     mag:   member.stats.mag + b.mag,
     spd:   member.stats.spd + b.spd,
   };
-}
-
-export function memberEquipItem(save: CharacterSave, member: PartyMember, itemId: string): string | null {
-  const item = getItem(itemId);
-  if (!item) return '不明なアイテムです';
-  if (item.type === 'consumable') return 'このアイテムは装備できません';
-  const slot = item.type as keyof Equipment;
-  const prev = member.equipment[slot];
-  if (prev) addItem(save, prev);
-  member.equipment[slot] = itemId;
-  removeItem(save, itemId);
-  return null;
-}
-
-export function memberUnequipSlot(save: CharacterSave, member: PartyMember, slot: keyof Equipment): void {
-  const itemId = member.equipment[slot];
-  if (!itemId) return;
-  addItem(save, itemId);
-  member.equipment[slot] = null;
 }

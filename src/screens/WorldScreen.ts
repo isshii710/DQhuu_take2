@@ -5,6 +5,8 @@ import { getMapDef } from '../data/maps';
 import { writeSave } from '../systems/SaveSystem';
 import { randomEncounter, ENEMY_MAP, ENCOUNTER_GROUPS } from '../data/enemies';
 import { ITEM_MAP } from '../data/items';
+import { hasItem, removeItem } from '../systems/InventorySystem';
+import { TREASURE_MAPS } from '../data/treasureMaps';
 import { getEnemyTexture } from '../engine/TextureCache';
 import { mpManager } from '../systems/MultiplayerManager';
 import type { NetPlayer, EnemyDef } from '../types';
@@ -29,15 +31,21 @@ interface FieldEnemy {
 }
 
 const MAP_FLAGS: Partial<Record<MapId, string>> = {
-  village: 'village_visited',
-  world: 'world_visited',
-  castle: 'castle_visited',
-  dungeon: 'dungeon_entered',
-  dungeon2: 'dungeon2_entered',
-  dungeon3: 'dungeon3_entered',
-  house1: 'house1_visited',
-  house2: 'house2_visited',
-  house3: 'house3_visited',
+  village:      'village_visited',
+  world:        'world_visited',
+  castle:       'castle_visited',
+  dungeon:      'dungeon_entered',
+  dungeon2:     'dungeon2_entered',
+  dungeon3:     'dungeon3_entered',
+  house1:       'house1_visited',
+  house2:       'house2_visited',
+  house3:       'house3_visited',
+  ruins:        'ruins_visited',
+  ice_cave:     'ice_cave_visited',
+  lava_cave:    'lava_cave_visited',
+  sea_temple:   'sea_temple_visited',
+  sky_castle:   'sky_castle_visited',
+  demon_castle: 'demon_castle_visited',
 };
 
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
@@ -91,7 +99,7 @@ export class WorldScreen {
 
   private pendingClassPick: { def: PartyMemberDef } | null = null;
   private pendingBossBattle = false;
-  private pendingBossId: string | null = null; // generic boss NPC battle
+  private pendingBossId: string | null = null;
 
   private onOpenGacha?: () => void;
   private onOpenCraft?: () => void;
@@ -110,7 +118,9 @@ export class WorldScreen {
   private mapTransitionCooldown = 0; // ms — prevents re-entering exit immediately after map change
 
   private onBattle!: (opts: BattleOpts) => void;
-  private onMenu!:   (save: CharacterSave, onClose: (s: CharacterSave)=>void, onFieldAction?: (action: string) => void, onOpenGacha?: ()=>void, onOpenCraft?: ()=>void, onEnterMap?: (mapId: MapId)=>void) => void;
+  private onMenu!: (save: CharacterSave, onClose: (s: CharacterSave)=>void, onFieldAction?: (action: string) => void, onOpenGacha?: ()=>void, onOpenCraft?: ()=>void, onEnterMap?: (mapId: MapId)=>void) => void;
+  private stealthMode = false;
+  private stealthIndicator: HTMLElement | null = null;
 
   private active = false;
   private lastTime = 0;
@@ -142,9 +152,9 @@ export class WorldScreen {
     `;
     this.uiRoot.appendChild(ctrlBar);
 
-    // VirtualJoystick — covers left 60% full height (floating, appears at touch)
+    // VirtualJoystick — covers full width above the button row (floating, appears at touch)
     const joyWrap = document.createElement('div');
-    joyWrap.style.cssText = 'position:absolute;top:0;bottom:100px;left:0;width:60%;pointer-events:auto;';
+    joyWrap.style.cssText = 'position:absolute;top:0;bottom:100px;left:0;right:0;pointer-events:auto;';
     this.uiRoot.appendChild(joyWrap);
     this.joystick = new VirtualJoystick(joyWrap, dir => {
       this.heldDir = dir;
@@ -227,6 +237,10 @@ export class WorldScreen {
     this.isHost = opts.isHost ?? false;
     this.onBattle = onBattle;
     this.onMenu   = onMenu;
+    // Always use internal implementations for gacha and map entry
+    this.onOpenGacha = () => this.showGachaDialog();
+    this.onEnterMap  = (mapId: MapId) => this.enterTreasureMap(mapId);
+    this.onOpenCraft = onOpenCraft;
     this.moving = false;
     this.dialogOpen = false;
     this.dialogEl.style.display = 'none';
@@ -241,7 +255,7 @@ export class WorldScreen {
     this.playerSprite = this.renderer.spawnPlayer(ci, save.position.tileX, save.position.tileY);
 
     // Field enemies
-    const isDungeon = (id: string) => id === 'dungeon' || id === 'dungeon2' || id === 'dungeon3';
+    const isDungeon = (id: string) => ['dungeon','dungeon2','dungeon3','ruins','ice_cave','lava_cave','sea_temple','sky_castle','demon_castle','tmap_1','tmap_2','tmap_3','tmap_4','tmap_5'].includes(id);
     const sameMapReturn = opts.fromBattle && this.preBattleMapId === this.mapId;
     if (sameMapReturn) {
       for (const fe of this.fieldEnemies) {
@@ -449,6 +463,10 @@ export class WorldScreen {
         this.showChurchDialog();
       } else if (npc.id === 'medal_master') {
         this.showMedalMasterDialog();
+      } else if (npc.id === 'ship_merchant') {
+        this.showShipMerchantDialog();
+      } else if (npc.id === 'dock_captain') {
+        this.showDockDialog();
       } else if (npc.shopType) {
         this.showShopDialog(npc);
       } else if (npc.bossId) {
@@ -487,8 +505,8 @@ export class WorldScreen {
         return;
       }
       // Random encounters in dungeons (floor tiles don't match ENCOUNTER_TILES, so check inline)
-      const inDungeon = this.mapId === 'dungeon' || this.mapId === 'dungeon2' || this.mapId === 'dungeon3';
-      if (inDungeon) {
+      const inDungeon = ['dungeon','dungeon2','dungeon3','ruins','ice_cave','lava_cave','sea_temple','sky_castle','demon_castle','tmap_1','tmap_2','tmap_3','tmap_4','tmap_5'].includes(this.mapId);
+      if (inDungeon && !this.stealthMode) {
         this.stepsSinceEncounter++;
         if (this.stepsSinceEncounter >= 5 && Math.random() < ENCOUNTER_RATE) {
           this.stepsSinceEncounter = 0;
@@ -523,7 +541,8 @@ export class WorldScreen {
       targetX, targetY
     );
 
-    if (mapDef.encounterGroup) this.spawnFieldEnemies();
+    const isDungeon = (id: string) => ['dungeon','dungeon2','dungeon3','ruins','ice_cave','lava_cave','sea_temple','sky_castle','demon_castle','tmap_1','tmap_2','tmap_3','tmap_4','tmap_5'].includes(id);
+    if (mapDef.encounterGroup && !isDungeon(targetMap)) this.spawnFieldEnemies();
 
     // Minimap for new map
     this.minimapCvs?.remove();
@@ -545,6 +564,7 @@ export class WorldScreen {
   // ─── Encounter ─────────────────────────────────────────────────────────────
 
   private checkEncounter(tileId: number) {
+    if (this.stealthMode) { this.stepsSinceEncounter = 0; return; }
     if (!ENCOUNTER_TILES.has(tileId)) { this.stepsSinceEncounter = 0; return; }
     this.stepsSinceEncounter++;
     if (this.stepsSinceEncounter < 5) return;
@@ -750,6 +770,12 @@ export class WorldScreen {
         dungeon: isGoingUp ? '⬆ 地下1階へ' : '⬇ 闇の洞窟へ',
         dungeon2: this.mapId === 'dungeon3' ? '⬆ 地下2階へ' : '⬇ 地下2階へ',
         dungeon3: '⬇ 地下3階へ',
+        ruins:        this.mapId === 'world' ? '⬇ 古代遺跡へ' : '⬆ フィールドへ',
+        ice_cave:     this.mapId === 'ruins' ? '⬇ 古代遺跡 深部へ' : '⬆ 古代遺跡 1Fへ',
+        lava_cave:    this.mapId === 'world' ? '⬇ 溶岩洞窟へ' : '⬆ フィールドへ',
+        sky_castle:   this.mapId === 'lava_cave' ? '⬇ 天空の試練場へ' : '⬆ 溶岩洞窟へ',
+        sea_temple:   '⬇ 海底神殿へ',
+        demon_castle: this.mapId === 'sea_temple' ? '⬇ 魔王の城へ' : '⬆ 海底神殿へ',
       };
       const text = MAP_TEXT[exit.targetMap] ?? `→ ${exit.targetMap}`;
       const label = document.createElement('div');
@@ -802,7 +828,6 @@ export class WorldScreen {
         this.pendingBossId = null;
         const bossEnemy = ENEMY_MAP[bossId];
         if (bossEnemy) {
-          // Scale boss HP/ATK by boss level
           const prog = (this.save.bossProgress ?? {})[bossId] ?? { count: 0, level: 1 };
           const scale = 1 + (prog.level - 1) * 0.3;
           const scaled = { ...bossEnemy, hp: Math.round(bossEnemy.hp * scale), atk: Math.round(bossEnemy.atk * scale) };
@@ -917,6 +942,14 @@ export class WorldScreen {
         this.showMedalMasterDialog();
         return;
       }
+      if (npc.id === 'ship_merchant') {
+        this.showShipMerchantDialog();
+        return;
+      }
+      if (npc.id === 'dock_captain') {
+        this.showDockDialog();
+        return;
+      }
       if (npc.shopType) {
         this.showShopDialog(npc);
         return;
@@ -951,13 +984,52 @@ export class WorldScreen {
 
   private openMenu() {
     if (this.dialogOpen) return;
-    this.onMenu(this.save, (s) => {
-      this.save = s;
-      this.hudEl.update(s, getMapDef(this.mapId).name);
-    }, (action: string) => {
-      if (action === 'rula') this.showRulaDialog();
-      else if (action === 'releimito') this.showReleimitoDialog();
-    }, this.onOpenGacha, this.onOpenCraft, this.onEnterMap);
+    this.onMenu(
+      this.save,
+      (s) => { this.save = s; this.hudEl.update(s, getMapDef(this.mapId).name); },
+      (action: string) => {
+        if (action === 'rula') this.showRulaDialog();
+        else if (action === 'releimito') this.showReleimitoDialog();
+        else if (action === 'stealth') this.toggleStealth();
+      },
+      this.onOpenGacha,
+      this.onOpenCraft,
+      this.onEnterMap,
+    );
+  }
+
+  private toggleStealth() {
+    this.stealthMode = !this.stealthMode;
+    this.save.flags['stealth_active'] = this.stealthMode;
+    writeSave(this.save);
+    this.updateStealthIndicator();
+    this.showDialogue(
+      'ステルス',
+      this.stealthMode
+        ? ['ステルスモードON！', 'ランダムエンカウントが抑制される。']
+        : ['ステルスモードOFF。', '通常のエンカウント率に戻った。'],
+    );
+  }
+
+  private updateStealthIndicator() {
+    if (this.stealthMode) {
+      if (!this.stealthIndicator) {
+        const el = document.createElement('div');
+        el.style.cssText = `
+          position:absolute;top:8px;left:50%;transform:translateX(-50%);
+          background:rgba(30,10,60,0.85);border:1px solid rgba(180,80,255,0.7);
+          border-radius:20px;padding:4px 12px;
+          color:#CC88FF;font-size:11px;pointer-events:none;z-index:10;
+          font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;
+        `;
+        el.textContent = '🌑 ステルス中';
+        this.uiRoot.appendChild(el);
+        this.stealthIndicator = el;
+      }
+    } else {
+      this.stealthIndicator?.remove();
+      this.stealthIndicator = null;
+    }
   }
 
   // ─── ショップダイアログ ──────────────────────────────────────────────────────
@@ -1241,6 +1313,7 @@ export class WorldScreen {
     this.save.flags[flagKey] = true;
     writeSave(this.save);
     this.hudEl.update(this.save, getMapDef(this.mapId).name);
+    this.renderer.openChest(npc.id);
     this.showDialogue('✨ 宝箱', [`${item.name}を手に入れた！`]);
   }
 
@@ -1543,15 +1616,208 @@ export class WorldScreen {
     }, 300);
   }
 
+  // ─── 船商人 / 港の船頭 ───────────────────────────────────────────────────
+
+  private showShipMerchantDialog() {
+    if (this.save.flags['has_ship']) {
+      this.showDialogue('⛵ 船商人', ['すでに船をお持ちです。', '港の船頭に話しかければ出航できますよ。']);
+      return;
+    }
+    if (this.dialogOpen) return;
+    this.dialogOpen = true;
+    const SHIP_COST = 5000;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);pointer-events:auto;z-index:20;`;
+    const box = document.createElement('div');
+    box.style.cssText = `background:rgba(10,10,30,0.97);border:2px solid rgba(212,175,55,0.7);border-radius:8px;padding:20px 22px;width:270px;font-family:${FONT};`;
+
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#FFD700;font-size:14px;margin-bottom:6px;';
+    title.textContent = '⛵ 船商人';
+    const msg = document.createElement('div');
+    msg.style.cssText = 'color:#FFFDE7;font-size:13px;margin-bottom:14px;line-height:1.5;';
+    msg.textContent = `船を売ります。\n${SHIP_COST} ゴールドですがよろしいですか？\n（所持金: ${this.save.gold} G）`;
+    box.appendChild(title); box.appendChild(msg);
+
+    const close = () => { overlay.remove(); this.dialogOpen = false; };
+    const canBuy = this.save.gold >= SHIP_COST;
+
+    const yesBtn = document.createElement('button');
+    yesBtn.style.cssText = `display:block;width:100%;padding:10px 0;margin-bottom:8px;background:${canBuy?'rgba(10,30,10,0.9)':'rgba(16,16,28,0.9)'};color:${canBuy?'#AAFFAA':'#666677'};border:1px solid ${canBuy?'rgba(68,187,68,0.5)':'rgba(51,68,102,0.5)'};border-radius:4px;font-size:14px;font-family:${FONT};cursor:${canBuy?'pointer':'default'};pointer-events:auto;`;
+    yesBtn.textContent = canBuy ? 'はい（購入する）' : 'ゴールドが足りない';
+    if (canBuy) {
+      yesBtn.addEventListener('click', () => {
+        this.save.gold -= SHIP_COST;
+        this.save.flags['has_ship'] = true;
+        writeSave(this.save);
+        this.hudEl.update(this.save, getMapDef(this.mapId).name);
+        close();
+        this.showDialogue('⛵ 船商人', ['ありがとうございます！', '船を手に入れました！⛵', '港の船頭に話しかければ出航できますよ。']);
+      });
+    }
+    box.appendChild(yesBtn);
+
+    const noBtn = document.createElement('button');
+    noBtn.style.cssText = `display:block;width:100%;padding:8px 0;background:rgba(16,16,28,0.9);color:#888899;border:1px solid rgba(51,68,102,0.5);border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    noBtn.textContent = 'いいえ';
+    noBtn.addEventListener('click', close);
+    box.appendChild(noBtn);
+    overlay.appendChild(box);
+    this.uiRoot.appendChild(overlay);
+  }
+
+  private showDockDialog() {
+    if (!this.save.flags['has_ship']) {
+      this.showDialogue('⚓ 港の船頭', ['船がなければ出航できません。', '村の船商人から船を購入してください。']);
+      return;
+    }
+    if (this.dialogOpen) return;
+    this.dialogOpen = true;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);pointer-events:auto;z-index:20;`;
+    const box = document.createElement('div');
+    box.style.cssText = `background:rgba(10,10,30,0.97);border:2px solid rgba(212,175,55,0.7);border-radius:8px;padding:20px 22px;width:270px;font-family:${FONT};`;
+
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#FFD700;font-size:14px;margin-bottom:6px;';
+    title.textContent = '⚓ 港の船頭';
+    const msg = document.createElement('div');
+    msg.style.cssText = 'color:#FFFDE7;font-size:13px;margin-bottom:14px;line-height:1.5;';
+    msg.textContent = '海の向こうの神殿へ出航しますか？';
+    box.appendChild(title); box.appendChild(msg);
+
+    const close = () => { overlay.remove(); this.dialogOpen = false; };
+
+    const yesBtn = document.createElement('button');
+    yesBtn.style.cssText = `display:block;width:100%;padding:10px 0;margin-bottom:8px;background:rgba(10,20,40,0.9);color:#88CCFF;border:1px solid rgba(68,136,255,0.5);border-radius:4px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    yesBtn.textContent = 'はい（出航する）';
+    yesBtn.addEventListener('click', () => { close(); this.changeMap('sea_temple', 9, 11); });
+    box.appendChild(yesBtn);
+
+    const noBtn = document.createElement('button');
+    noBtn.style.cssText = `display:block;width:100%;padding:8px 0;background:rgba(16,16,28,0.9);color:#888899;border:1px solid rgba(51,68,102,0.5);border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    noBtn.textContent = 'いいえ';
+    noBtn.addEventListener('click', close);
+    box.appendChild(noBtn);
+    overlay.appendChild(box);
+    this.uiRoot.appendChild(overlay);
+  }
+
   // ─── ルーラ (ワープ) ─────────────────────────────────────────────────────
+
+  // ─── 宝の地図ガチャ ──────────────────────────────────────────────────────────
+
+  private showGachaDialog() {
+    if (this.dialogOpen) return;
+    this.dialogOpen = true;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0.88);z-index:30;display:flex;align-items:center;justify-content:center;pointer-events:auto;';
+
+    const box = document.createElement('div');
+    box.style.cssText = `background:rgba(10,5,30,0.97);border:2px solid rgba(212,175,55,0.8);border-radius:8px;padding:24px 20px;max-width:320px;width:90%;text-align:center;font-family:${FONT};`;
+
+    const close = () => { overlay.remove(); this.dialogOpen = false; };
+
+    const rebuild = () => {
+      box.innerHTML = '';
+      const title = document.createElement('div');
+      title.style.cssText = 'color:#FFD700;font-size:16px;font-weight:bold;margin-bottom:14px;';
+      title.textContent = '✨ 宝の地図ガチャ';
+      box.appendChild(title);
+
+      if (!hasItem(this.save, 'gacha_ticket')) {
+        const msg = document.createElement('div');
+        msg.style.cssText = 'color:#FFFDE7;font-size:13px;line-height:1.6;margin-bottom:18px;';
+        msg.textContent = 'ガチャ券がありません。\n敵を倒して入手しましょう！';
+        box.appendChild(msg);
+        const btn = document.createElement('button');
+        btn.textContent = '閉じる';
+        btn.style.cssText = `padding:8px 28px;background:rgba(60,50,20,0.9);color:#FFD700;border:1px solid rgba(212,175,55,0.5);border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+        btn.addEventListener('click', close);
+        box.appendChild(btn);
+        return;
+      }
+
+      const qty = this.save.inventory.find(e => e.itemId === 'gacha_ticket')?.qty ?? 0;
+      const owned = this.save.ownedMaps ?? [];
+      const unowned = TREASURE_MAPS.filter(m => !owned.includes(m.id));
+
+      const info = document.createElement('div');
+      info.style.cssText = 'color:#FFFDE7;font-size:13px;margin-bottom:4px;';
+      info.textContent = `ガチャ券: ${qty}枚`;
+      box.appendChild(info);
+
+      const sub = document.createElement('div');
+      sub.style.cssText = 'color:#88AAFF;font-size:11px;margin-bottom:18px;';
+      sub.textContent = unowned.length > 0
+        ? `未入手の地図: ${unowned.length}/${TREASURE_MAPS.length}種`
+        : '全ての地図を入手済み！引いても重複します';
+      box.appendChild(sub);
+
+      const pullBtn = document.createElement('button');
+      pullBtn.textContent = '🎲 ガチャを引く！（券1枚）';
+      pullBtn.style.cssText = `display:block;width:100%;padding:12px;background:rgba(100,70,0,0.9);color:#FFD700;border:1px solid rgba(212,175,55,0.8);border-radius:6px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;margin-bottom:8px;`;
+      pullBtn.addEventListener('click', () => {
+        removeItem(this.save, 'gacha_ticket', 1);
+        const pool = unowned.length > 0 ? unowned : TREASURE_MAPS;
+        const won = pool[Math.floor(Math.random() * pool.length)];
+        if (!this.save.ownedMaps) this.save.ownedMaps = [];
+        const isNew = !this.save.ownedMaps.includes(won.id);
+        if (isNew) this.save.ownedMaps.push(won.id);
+        writeSave(this.save);
+
+        box.innerHTML = '';
+        const rt = document.createElement('div');
+        rt.style.cssText = 'color:#FFD700;font-size:15px;font-weight:bold;margin-bottom:14px;';
+        rt.textContent = isNew ? '🗺 新しい地図を入手！' : '✨ すでに持っている地図';
+        const rn = document.createElement('div');
+        rn.style.cssText = 'color:#FFFDE7;font-size:20px;font-weight:bold;margin-bottom:8px;';
+        rn.textContent = won.name;
+        const rs = document.createElement('div');
+        rs.style.cssText = `color:${isNew ? '#88FF88' : '#FF8888'};font-size:12px;margin-bottom:20px;`;
+        rs.textContent = isNew ? 'メニューの「宝の地図」から入れます！' : 'この地図はすでに持っています';
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '閉じる';
+        closeBtn.style.cssText = `padding:8px 28px;background:rgba(60,50,20,0.9);color:#FFD700;border:1px solid rgba(212,175,55,0.5);border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+        closeBtn.addEventListener('click', close);
+        box.appendChild(rt); box.appendChild(rn); box.appendChild(rs); box.appendChild(closeBtn);
+      });
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'キャンセル';
+      cancelBtn.style.cssText = `display:block;width:100%;padding:8px;background:transparent;color:#888899;border:1px solid rgba(100,100,150,0.3);border-radius:4px;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+      cancelBtn.addEventListener('click', close);
+
+      box.appendChild(pullBtn);
+      box.appendChild(cancelBtn);
+    };
+
+    rebuild();
+    overlay.appendChild(box);
+    this.uiRoot.appendChild(overlay);
+  }
+
+  private enterTreasureMap(mapId: MapId) {
+    this.changeMap(mapId, 9, 12);
+  }
 
   showRulaDialog() {
     if (this.dialogOpen) return;
     this.dialogOpen = true;
 
     const destinations = [
-      { mapId: 'village' as MapId, name: 'ハジメ村', flag: 'village_visited', x: 9, y: 11 },
-      { mapId: 'castle' as MapId, name: 'アルデア城', flag: 'castle_visited', x: 9, y: 11 },
+      { mapId: 'village'     as MapId, name: 'ハジメ村',     flag: 'village_visited',     x: 9,  y: 11 },
+      { mapId: 'castle'      as MapId, name: 'アルデア城',   flag: 'castle_visited',      x: 9,  y: 11 },
+      { mapId: 'dungeon'     as MapId, name: '地下ダンジョン', flag: 'dungeon_entered',   x: 3,  y: 3  },
+      { mapId: 'ruins'       as MapId, name: '古代遺跡',     flag: 'ruins_visited',       x: 5,  y: 5  },
+      { mapId: 'ice_cave'    as MapId, name: '氷の洞窟',     flag: 'ice_cave_visited',    x: 5,  y: 5  },
+      { mapId: 'lava_cave'   as MapId, name: '溶岩洞窟',     flag: 'lava_cave_visited',   x: 5,  y: 5  },
+      { mapId: 'sea_temple'  as MapId, name: '海底神殿',     flag: 'sea_temple_visited',  x: 5,  y: 5  },
+      { mapId: 'sky_castle'  as MapId, name: '天空城',       flag: 'sky_castle_visited',  x: 5,  y: 5  },
+      { mapId: 'demon_castle'as MapId, name: '魔王の城',     flag: 'demon_castle_visited',x: 5,  y: 5  },
     ].filter(d => this.save.flags[d.flag]);
 
     const overlay = document.createElement('div');
@@ -1597,9 +1863,14 @@ export class WorldScreen {
   // ─── リレミト (ダンジョン脱出) ───────────────────────────────────────────
 
   showReleimitoDialog() {
-    const isDungeon = this.mapId === 'dungeon' || this.mapId === 'dungeon2' || this.mapId === 'dungeon3';
-    if (!isDungeon) {
-      this.showDialogue('システム', ['ここでは使えない。']);
+    const dungeonMaps: string[] = [
+      'dungeon', 'dungeon2', 'dungeon3',
+      'ruins', 'ice_cave', 'lava_cave', 'sea_temple', 'sky_castle', 'demon_castle',
+      'tmap_1', 'tmap_2', 'tmap_3', 'tmap_4', 'tmap_5',
+      'house1', 'house2', 'house3',
+    ];
+    if (!dungeonMaps.includes(this.mapId)) {
+      this.showDialogue('リレミト', ['屋外では使えない。\nダンジョン内でのみ使えるぞ。']);
       return;
     }
     if (this.dialogOpen) return;

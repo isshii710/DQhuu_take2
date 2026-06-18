@@ -152,6 +152,31 @@ export const ENEMIES: EnemyDef[] = [
   { id: 'tmap_boss_5', name: '天空の魔龍セラフィア',
     hp: 420, atk: 48, def: 35, mag: 50, spd: 20,
     exp: 450, gold: 200, drops: ['mat_map5'], sprite: 'dragon' },
+
+  // ─── Metal series (rare / high evasion / may flee) ────────────────────────
+  { id: 'metal_slime',    name: 'メタルスライム',
+    hp: 3,   atk: 10, def: 200, mag: 0,  spd: 30,
+    exp: 1500, gold: 10, drops: [], sprite: 'slime',
+    evasion: 85, fleeChance: 70 },
+  { id: 'hagure_metal',   name: 'はぐれメタル',
+    hp: 5,   atk: 15, def: 250, mag: 0,  spd: 40,
+    exp: 8000, gold: 20, drops: [], sprite: 'slime',
+    evasion: 95, fleeChance: 80 },
+  { id: 'metal_king',     name: 'メタルキング',
+    hp: 8,   atk: 20, def: 300, mag: 0,  spd: 50,
+    exp: 30000, gold: 30, drops: ['gacha_ticket'], sprite: 'slime',
+    evasion: 99, fleeChance: 90 },
+
+  // ─── Gold series (rare / high gold drops) ────────────────────────────────
+  { id: 'gold_slime',     name: 'ゴールドスライム',
+    hp: 40,  atk: 18, def: 8,   mag: 0,  spd: 15,
+    exp: 50,  gold: 500,  drops: [], sprite: 'slime' },
+  { id: 'golden_golem',   name: 'ゴールデンゴーレム',
+    hp: 120, atk: 32, def: 22,  mag: 0,  spd: 8,
+    exp: 120, gold: 2000, drops: [], sprite: 'golem' },
+  { id: 'king_gold',      name: 'キングゴールド',
+    hp: 200, atk: 45, def: 30,  mag: 10, spd: 10,
+    exp: 300, gold: 8000, drops: ['gacha_ticket'], sprite: 'boss' },
 ];
 
 export const ENEMY_MAP: Record<string, EnemyDef> = Object.fromEntries(ENEMIES.map(e => [e.id, e]));
@@ -164,6 +189,8 @@ export const ENCOUNTER_GROUPS: Record<string, string[][]> = {
     ['forestla', 'goblin'],
     ['vampabat'],
     ['vampabat', 'vampabat'],
+    ['metal_slime'],
+    ['gold_slime'],
   ],
   world_forest: [
     ['witchwiz'],
@@ -171,12 +198,14 @@ export const ENCOUNTER_GROUPS: Record<string, string[][]> = {
     ['gargoyle', 'vampabat'],
     ['dragonette'],
     ['witchwiz', 'goblin'],
+    ['metal_slime'],
   ],
   dungeon: [
     ['irongolem'],
     ['shadowknight'],
     ['dragonette', 'gargoyle'],
     ['shadowknight', 'witchwiz'],
+    ['hagure_metal'],
   ],
   boss: [
     ['grosur'],
@@ -186,6 +215,7 @@ export const ENCOUNTER_GROUPS: Record<string, string[][]> = {
     ['stone_golem', 'stone_golem'],
     ['ancient_mage'],
     ['stone_golem', 'ancient_mage'],
+    ['gold_slime'],
   ],
   ice_cave: [
     ['ice_wolf'],
@@ -204,6 +234,7 @@ export const ENCOUNTER_GROUPS: Record<string, string[][]> = {
     ['deep_witch'],
     ['sea_serpent', 'deep_witch'],
     ['sea_serpent', 'sea_serpent'],
+    ['metal_king'],
   ],
   sky_castle: [
     ['sky_knight'],
@@ -216,6 +247,8 @@ export const ENCOUNTER_GROUPS: Record<string, string[][]> = {
     ['chaos_mage'],
     ['dark_knight', 'chaos_mage'],
     ['dark_knight', 'dark_knight'],
+    ['metal_king'],
+    ['king_gold'],
   ],
   tmap_1: [['stone_golem'], ['ancient_mage'], ['stone_golem', 'ancient_mage']],
   tmap_2: [['ice_wolf'], ['blizzard_bat'], ['ice_wolf', 'blizzard_bat']],
