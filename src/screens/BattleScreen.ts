@@ -3,7 +3,7 @@ import { COLORS } from '../config';
 import { getClassDef } from '../data/characters';
 import {
   buildCombatant, buildEnemyCombatant, buildPartyMemberCombatant, resolveAction,
-  enemyAI, applyExpGain, applyTurnStartEffects, isAllDefeated, type Combatant,
+  enemyAI, applyExpGain, applyTurnStartEffects, isAllDefeated, type Combatant, type BattleAction,
 } from '../systems/BattleSystem';
 import { effectiveStats, memberEffectiveStats } from '../systems/InventorySystem';
 import { writeSave } from '../systems/SaveSystem';
@@ -629,7 +629,7 @@ export class BattleScreen {
     }
   }
 
-  // ─── Execute all pending actions ─────────────────────────────────────────────
+  // ─── Execute all pending actions (speed-ordered) ────────────────────────────
 
   private executeAllActions() {
     this.phase = 'executing';
@@ -649,16 +649,86 @@ export class BattleScreen {
       return;
     }
 
-    // Sequential: each action starts AFTER the previous one's animation finishes
+    // Build unified turn list: party actions + enemy AI decisions
+    type TurnEntry =
+      | { kind: 'party'; spd: number; pending: typeof this.pendingActions[0] }
+      | { kind: 'enemy'; spd: number; enemy: Combatant; action: BattleAction; originalTargetId: string };
+
+    const alliedTargets = [this.playerC, ...this.companionCs.filter(c => c.hp > 0)];
+    const livingEnemies = this.enemyCs.filter(e => e.hp > 0);
+
+    const turns: TurnEntry[] = [];
+
+    for (const pa of this.pendingActions) {
+      turns.push({ kind: 'party', spd: pa.actor.spd, pending: pa });
+    }
+    for (const enemy of livingEnemies) {
+      const action = enemyAI(enemy, alliedTargets);
+      turns.push({ kind: 'enemy', spd: enemy.spd, enemy, action, originalTargetId: action.targetId ?? this.playerC.id });
+    }
+
+    // Sort by speed desc, small random tiebreaker
+    turns.sort((a, b) => (b.spd - a.spd) + (Math.random() - 0.5) * 2);
+
     let chain = Promise.resolve();
-    this.pendingActions.forEach(action => {
-      chain = chain.then(() => this.executeAndWait(action));
-    });
+    for (const turn of turns) {
+      chain = chain.then(() => {
+        if (turn.kind === 'party') {
+          if (turn.pending.actor.hp <= 0) return Promise.resolve();
+          return this.executeAndWait(turn.pending);
+        } else {
+          if (turn.enemy.hp <= 0) return Promise.resolve();
+          return this.executeEnemyTurn(turn.enemy, turn.action, turn.originalTargetId);
+        }
+      });
+    }
 
     chain.then(() => {
-      this.delay(500, () => {
+      this.delay(400, () => {
         if (this.enemyCs.every(e => e.hp <= 0)) this.doVictory();
-        else this.doEnemyTurns();
+        else if (isAllDefeated([this.playerC, ...this.companionCs])) this.doDefeat();
+        else this.startCommandPhase();
+      });
+    });
+  }
+
+  private executeEnemyTurn(enemy: Combatant, action: BattleAction, originalTargetId: string): Promise<void> {
+    return new Promise(resolve => {
+      this.log(`${enemy.name}の番…`);
+      this.delay(350, () => {
+        // Re-pick target if original is dead
+        const alliedTargets = [this.playerC, ...this.companionCs.filter(c => c.hp > 0)];
+        const target = alliedTargets.find(t => t.id === originalTargetId && t.hp > 0)
+                       ?? alliedTargets[0];
+        if (!target) { resolve(); return; }
+
+        const result = resolveAction(enemy, { ...action, targetId: target.id }, target);
+        this.log(result.text);
+
+        if (result.damage) {
+          if (target.id === this.playerC.id) {
+            this.animatePlayerHit();
+            this.showDmg(-1, result.damage, true);
+            this.save.stats.hp = this.playerC.hp;
+            this.refreshPlayerBar();
+          } else {
+            const ci = this.companionCs.indexOf(target);
+            if (ci >= 0) {
+              const marker = this.companionMarkers[ci] as HTMLElement | undefined;
+              if (marker) {
+                marker.style.transition = 'transform 0.05s';
+                marker.style.transform = 'translateX(8px)';
+                setTimeout(() => { marker.style.transform = 'translateX(-6px)'; }, 60);
+                setTimeout(() => { marker.style.transform = ''; marker.style.transition = ''; }, 130);
+              }
+              this.refreshCompanionBar(ci);
+              const m = this.save.party.find(p => `party_${p.id}` === target.id);
+              if (m) m.stats.hp = target.hp;
+            }
+          }
+        }
+
+        this.delay(1000, resolve);
       });
     });
   }
@@ -922,40 +992,6 @@ export class BattleScreen {
     });
   }
 
-  private doEnemyTurns() {
-    const living = this.enemyCs.filter(e => e.hp > 0);
-    const alliedTargets = [this.playerC, ...this.companionCs.filter(c => c.hp > 0)];
-    let d = 0;
-    living.forEach(enemy => {
-      this.delay(d, () => {
-        const action = enemyAI(enemy, alliedTargets);
-        const target = alliedTargets.find(t => t.id === action.targetId) ?? this.playerC;
-        const result = resolveAction(enemy, action, target);
-        this.log(result.text);
-        if (result.damage) {
-          if (target.id === this.playerC.id) {
-            this.showDmg(-1, result.damage, true);
-            this.save.stats.hp = this.playerC.hp;
-            this.refreshPlayerBar();
-          } else {
-            // 仲間がダメージを受けた場合
-            const ci = this.companionCs.indexOf(target);
-            if (ci >= 0) this.refreshCompanionBar(ci);
-            // sync hp back to save
-            const m = this.save.party.find(p => `party_${p.id}` === target.id);
-            if (m) m.stats.hp = target.hp;
-          }
-        }
-      });
-      d += 750;
-    });
-    this.delay(d + 350, () => {
-      const allDead = isAllDefeated([this.playerC, ...this.companionCs]);
-      if (allDead || this.playerC.hp <= 0) { this.doDefeat(); return; }
-      this.startCommandPhase();
-    });
-  }
-
   // ─── HP bar updates ─────────────────────────────────────────────────────────
 
   private refreshEnemyBar(i: number) {
@@ -1013,7 +1049,8 @@ export class BattleScreen {
     num.textContent = `-${dmg}`;
     num.style.color = toPlayer ? '#FF8888' : '#FF4444';
     const panel = this.enemyPanels[enemyIndex];
-    const rect = (panel ? panel.wrap : this.root).getBoundingClientRect();
+    const ref = panel ? panel.wrap : (this.playerMarker ?? this.root);
+    const rect = ref.getBoundingClientRect();
     const rootRect = this.root.getBoundingClientRect();
     num.style.left = (rect.left - rootRect.left + rect.width/2 - 20) + 'px';
     num.style.top  = (rect.top  - rootRect.top + 10) + 'px';
@@ -1023,6 +1060,15 @@ export class BattleScreen {
       num.style.opacity = '0';
     });
     setTimeout(() => num.remove(), 900);
+  }
+
+  private animatePlayerHit() {
+    if (!this.playerMarker) return;
+    this.playerMarker.style.transition = 'transform 0.05s';
+    this.playerMarker.style.transform = 'translateX(10px)';
+    setTimeout(() => { this.playerMarker.style.transform = 'translateX(-10px)'; }, 60);
+    setTimeout(() => { this.playerMarker.style.transform = 'translateX(6px)'; }, 120);
+    setTimeout(() => { this.playerMarker.style.transform = ''; this.playerMarker.style.transition = ''; }, 190);
   }
 
   // ─── Victory / Defeat ───────────────────────────────────────────────────────
