@@ -46,6 +46,7 @@ export class BattleScreen {
   private targetRings: HTMLElement[] = [];
   private companionMarkers: HTMLElement[] = [];
   private playerMarker!: HTMLElement;
+  private heroSpriteEl!: HTMLElement; // only the hero canvas — animated separately
 
   private onEnd!: (save: CharacterSave, mapId: string) => void;
   private onDefeatCb?: () => void;
@@ -214,13 +215,15 @@ export class BattleScreen {
       this.companionMarkers.push(compCvs);
     }
 
-    // Hero sprite (main, facing enemies = frame 6 = up-facing)
+    // Hero sprite in its own wrapper so only hero moves during animateStepIn
+    this.heroSpriteEl = el('div', 'display:inline-block;');
     const heroCvs = document.createElement('canvas');
     heroCvs.width = 32; heroCvs.height = 32;
     heroCvs.style.cssText = 'width:72px;height:72px;image-rendering:pixelated;';
     const hcc = heroCvs.getContext('2d')!;
     hcc.drawImage(getHeroCanvas(ci), 6*32, 0, 32, 32, 0, 0, 32, 32);
-    this.playerMarker.appendChild(heroCvs);
+    this.heroSpriteEl.appendChild(heroCvs);
+    this.playerMarker.appendChild(this.heroSpriteEl);
 
     this.root.appendChild(this.playerMarker);
 
@@ -409,16 +412,10 @@ export class BattleScreen {
 
     const cls = getClassDef(className);
     const skills = cls.skills.filter(s => s.level <= actorLevel);
-    if (!skills.length) {
-      this.log('まだ使える魔法がない！');
-      this.delay(1000, () => { this.log('コマンドを選んでください'); this.buildCommandMenu(); });
-      return;
-    }
 
-    const PAGE_SIZE = 5;
-    const totalPages = Math.ceil(skills.length / PAGE_SIZE);
+    const PAGE_SIZE = 3;
+    const totalPages = Math.max(1, Math.ceil((skills.length + 1) / PAGE_SIZE)); // +1 for 通常攻撃
     const p = Math.max(0, Math.min(page, totalPages - 1));
-    const pageSkills = skills.slice(p * PAGE_SIZE, (p + 1) * PAGE_SIZE);
 
     const list = el('div','display:flex;flex-direction:column;gap:4px;');
 
@@ -436,25 +433,39 @@ export class BattleScreen {
     }
     list.appendChild(headerRow);
 
-    pageSkills.forEach(s => {
-      const b = document.createElement('button');
+    // Build item list: 通常攻撃 at index 0, then skills
+    const allEntries: Array<{ label: string; onClick: () => void }> = [];
+    allEntries.push({
+      label: '⚔ 通常攻撃 〔敵〕',
+      onClick: () => this.chooseAction('attack'),
+    });
+    skills.forEach(s => {
       const targetHint = s.targetType === 'ally' ? ' 〔味方〕' : s.targetType === 'all_allies' ? ' 〔全体〕' : s.targetType === 'all_enemies' ? ' 〔全敵〕' : s.targetType === 'self' ? ' 〔自分〕' : '';
-      b.textContent = `${s.name}${targetHint}  MP${s.mpCost}`;
-      b.style.cssText = `padding:6px 8px;background:rgba(16,16,30,0.9);color:#FFFDE7;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;text-align:left;`;
-      b.addEventListener('click', () => {
-        if (actor.mp < s.mpCost) { this.log('MPが足りない！'); return; }
-        if (s.targetType === 'self') {
-          this.chooseAction('magic', s.name, undefined, actor.id);
-        } else if (s.targetType === 'all_allies') {
-          this.chooseAction('magic', s.name, undefined, '__all_allies__');
-        } else if (s.targetType === 'all_enemies') {
-          this.chooseAction('magic', s.name, undefined, '__all_enemies__');
-        } else if (s.targetType === 'ally') {
-          this.buildAllyPicker(s.name, () => this.buildSkillMenu(actor, p));
-        } else {
-          this.chooseAction('magic', s.name);
-        }
+      allEntries.push({
+        label: `${s.name}${targetHint}  MP${s.mpCost}`,
+        onClick: () => {
+          if (actor.mp < s.mpCost) { this.log('MPが足りない！'); return; }
+          if (s.targetType === 'self') {
+            this.chooseAction('magic', s.name, undefined, actor.id);
+          } else if (s.targetType === 'all_allies') {
+            this.chooseAction('magic', s.name, undefined, '__all_allies__');
+          } else if (s.targetType === 'all_enemies') {
+            this.chooseAction('magic', s.name, undefined, '__all_enemies__');
+          } else if (s.targetType === 'ally') {
+            this.buildAllyPicker(s.name, () => this.buildSkillMenu(actor, p));
+          } else {
+            this.chooseAction('magic', s.name);
+          }
+        },
       });
+    });
+
+    const pageEntries = allEntries.slice(p * PAGE_SIZE, (p + 1) * PAGE_SIZE);
+    pageEntries.forEach(entry => {
+      const b = document.createElement('button');
+      b.textContent = entry.label;
+      b.style.cssText = `padding:6px 8px;background:rgba(16,16,30,0.9);color:#FFFDE7;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;text-align:left;`;
+      b.addEventListener('click', entry.onClick);
       list.appendChild(b);
     });
 
@@ -531,7 +542,7 @@ export class BattleScreen {
     back.addEventListener('click', () => { this.log('コマンドを選んでください'); this.buildCommandMenu(); });
     headerRow.appendChild(back);
 
-    const PAGE_SIZE = 5;
+    const PAGE_SIZE = 3;
     const totalPages = Math.max(1, Math.ceil(allInv.length / PAGE_SIZE));
     const p = Math.max(0, Math.min(page, totalPages - 1));
     if (totalPages > 1) {
@@ -866,9 +877,9 @@ export class BattleScreen {
   private animateStepIn(enemyIndex: number, isMagic: boolean, spellName?: string): Promise<void> {
     return new Promise(resolve => {
       const panel = this.enemyPanels[enemyIndex];
-      if (!panel || !this.playerMarker) { resolve(); return; }
+      if (!panel || !this.heroSpriteEl) { resolve(); return; }
 
-      const markerRect = this.playerMarker.getBoundingClientRect();
+      const markerRect = this.heroSpriteEl.getBoundingClientRect();
       const enemyRect = panel.wrap.getBoundingClientRect();
       const rootRect = this.root.getBoundingClientRect();
 
@@ -879,22 +890,19 @@ export class BattleScreen {
       const dx = enemyCx - markerCx;
       const dy = enemyCy - markerCy;
 
-      // Step toward enemy
-      this.playerMarker.style.transition = 'transform 0.18s ease-in';
-      this.playerMarker.style.transform = `translate(${dx * 0.6}px, ${dy * 0.7}px)`;
+      // Only hero sprite steps forward — companions stay in place
+      this.heroSpriteEl.style.transition = 'transform 0.18s ease-in';
+      this.heroSpriteEl.style.transform = `translate(${dx * 0.6}px, ${dy * 0.7}px)`;
 
       setTimeout(() => {
-        // Flash enemy red
         panel.wrap.style.filter = 'brightness(3) saturate(0) sepia(1) hue-rotate(-10deg)';
 
-        // Shake
         panel.wrap.style.transition = 'transform 0.05s';
         panel.wrap.style.transform = 'translateX(-8px)';
         setTimeout(() => panel.wrap.style.transform = 'translateX(8px)', 60);
         setTimeout(() => panel.wrap.style.transform = 'translateX(-5px)', 120);
         setTimeout(() => { panel.wrap.style.transform = 'translateX(0)'; panel.wrap.style.filter = ''; }, 200);
 
-        // For magic: shoot a spell orb projectile
         if (isMagic) {
           this.shootOrb(
             markerCx - rootRect.left,
@@ -905,10 +913,9 @@ export class BattleScreen {
           );
         }
 
-        // Step back
         setTimeout(() => {
-          this.playerMarker.style.transition = 'transform 0.15s ease-out';
-          this.playerMarker.style.transform = 'translate(0,0)';
+          this.heroSpriteEl.style.transition = 'transform 0.15s ease-out';
+          this.heroSpriteEl.style.transform = 'translate(0,0)';
           setTimeout(resolve, 180);
         }, 220);
       }, 200);
