@@ -231,6 +231,7 @@ export class WorldRenderer {
   private ambientLight!: THREE.AmbientLight;
   private sunLight!: THREE.DirectionalLight;
   private buildingLights: THREE.PointLight[] = [];
+  private playerLight: THREE.PointLight | null = null;
 
   private targetCamX = 0;
   private targetCamZ = 0;
@@ -640,6 +641,13 @@ export class WorldRenderer {
     const flicker = 0.85 + Math.sin(Date.now() * 0.0034) * 0.12 + Math.sin(Date.now() * 0.0071) * 0.03;
     this.buildingLights.forEach(pl => { pl.intensity = pl.color.r > 0.7 ? 0.9 * flicker : 0.7 * flicker; });
 
+    // Lantern: follow player with gentle torch flicker
+    if (this.playerLight) {
+      const torchFlicker = 2.2 + Math.sin(Date.now() * 0.0091) * 0.3 + Math.sin(Date.now() * 0.017) * 0.15;
+      this.playerLight.intensity = torchFlicker;
+      this.playerLight.position.set(this.currentCamX, 1.2, this.currentCamZ);
+    }
+
     // Exit ring pulse
     const pulse = Math.sin(Date.now() * 0.0028) * 0.3 + 0.7;
     this.exitMaterials.forEach(m => { m.opacity = pulse; });
@@ -696,6 +704,17 @@ export class WorldRenderer {
     // For indoor/dungeon maps, sky dome is null so only update clear color for outdoor
     if (this.skyDome) {
       this.renderer.setClearColor(skyTop);
+    }
+  }
+
+  setPlayerLight(enabled: boolean) {
+    if (enabled && !this.playerLight) {
+      this.playerLight = new THREE.PointLight(0xFFAA44, 2.5, 6.5);
+      this.playerLight.position.set(this.currentCamX, 1.2, this.currentCamZ);
+      this.scene.add(this.playerLight);
+    } else if (!enabled && this.playerLight) {
+      this.scene.remove(this.playerLight);
+      this.playerLight = null;
     }
   }
 

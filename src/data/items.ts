@@ -38,6 +38,7 @@ export const ITEMS: ItemDef[] = [
   { id: 'silver_ring', name:'銀のリング',type:'accessory',desc:'銀製の指輪。魔力が上がる',price:200, mag: 3, mmp: 5 },
   { id: 'guard_bracelet',name:'守護の腕輪',type:'accessory',desc:'身を守る魔力の腕輪',  price: 400, def: 5, mhp: 15 },
   { id: 'speed_boots', name:'俊足の靴', type:'accessory',desc:'素早さが大きく上がる靴',  price: 350, spd: 5 },
+  { id: 'lantern',     name:'ランタン', type:'accessory',desc:'暗闇を照らすランタン。夜間も周囲3タイルを明るく照らす', price: 180 },
 ];
 
 export const ITEM_MAP: Record<string, ItemDef> = Object.fromEntries(ITEMS.map(i => [i.id, i]));

@@ -301,6 +301,7 @@ export class WorldScreen {
       this.gameHour = (this.gameHour + 1) % 24;
     }
     this.renderer.setTimeOfDay(this.gameHour + this.gameClockAccum / 20000);
+    this.renderer.setPlayerLight(this.save.equipment.accessory === 'lantern');
 
     // Per-enemy individual movement timers + smooth visual interpolation
     let anyMoved = false;
@@ -938,7 +939,7 @@ export class WorldScreen {
     const SHOP_STOCK: Record<string, string[]> = {
       weapon: ['wood_sword','iron_sword','silver_sword','staff','crystal_staff','dagger','shadow_blade'],
       armor:  ['cloth','leather','chain_mail','plate_mail','robe','cloth_hat','leather_hat','iron_helm','leather_ring','silver_ring','guard_bracelet','speed_boots'],
-      item:   ['herb','potion','elixir','mana_herb','ether','antidote'],
+      item:   ['herb','potion','elixir','mana_herb','ether','antidote','lantern'],
     };
     const stockIds = SHOP_STOCK[npc.shopType!] ?? [];
     const stockItems = stockIds.map(id => ITEM_MAP[id]).filter(Boolean) as ItemDef[];
