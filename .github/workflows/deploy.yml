@@ -2,7 +2,7 @@ name: GitHub Pages へデプロイ
 
 on:
   push:
-    branches: [main, claude/dragonquest-rpg-audit-dwub17]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
