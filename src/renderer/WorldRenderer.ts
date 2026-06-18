@@ -239,6 +239,7 @@ export class WorldRenderer {
   private fieldEnemySprites = new Map<string, BillboardSprite>();
   private skyDome: THREE.Mesh | null = null;
   private buildingLights: THREE.PointLight[] = [];
+  private playerLantern: THREE.PointLight | null = null;
   private chestGroups = new Map<string, { lid: THREE.Mesh; opened: boolean }>();
 
   private sun!: THREE.DirectionalLight;
@@ -465,6 +466,11 @@ export class WorldRenderer {
       this.renderer.setClearColor(0x0a0a1a);
     }
 
+    // Player-carried lantern: warm glow in dungeons, subtle outdoors
+    if (this.playerLantern) this.scene.remove(this.playerLantern);
+    this.playerLantern = new THREE.PointLight(0xFFCC66, isOutdoor ? 0.0 : 1.8, isOutdoor ? 0 : 10);
+    this.scene.add(this.playerLantern);
+
     // Terrain
     const groundCanvas = this.buildGroundCanvas(mapDef.tiles, cols, rows);
     const groundTex = new THREE.CanvasTexture(groundCanvas);
@@ -496,12 +502,12 @@ export class WorldRenderer {
 
           // Warm point light inside village buildings and castle
           if (tileId === T.VILLAGE) {
-            const pl = new THREE.PointLight(0xFF9933, 0.9, 3.5);
+            const pl = new THREE.PointLight(0xFF9933, 1.4, 9.0);
             pl.position.set(tx + 0.5, h + 0.4, ty + 0.5);
             this.scene.add(pl);
             this.buildingLights.push(pl);
           } else if (tileId === T.CASTLE) {
-            const pl = new THREE.PointLight(0x99CCFF, 0.7, 4.0);
+            const pl = new THREE.PointLight(0x99CCFF, 1.1, 10.0);
             pl.position.set(tx + 0.5, h + 0.7, ty + 0.5);
             this.scene.add(pl);
             this.buildingLights.push(pl);
@@ -744,10 +750,11 @@ export class WorldRenderer {
     this.sun.target.position.set(x, 0, z);
     this.sun.target.updateMatrixWorld();
 
-    // Sync blob shadow positions
-    if (this.playerBlob && this.playerSprite) {
+    // Sync blob shadow + lantern to player position
+    if (this.playerSprite) {
       const p = this.playerSprite.sprite.position;
-      this.playerBlob.position.set(p.x, 0.01, p.z);
+      if (this.playerBlob) this.playerBlob.position.set(p.x, 0.01, p.z);
+      if (this.playerLantern) this.playerLantern.position.set(p.x, 1.2, p.z);
     }
     this.fieldEnemySprites.forEach((sp, id) => {
       const blob = this.enemyBlobs.get(id);
