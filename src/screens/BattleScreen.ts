@@ -227,7 +227,8 @@ export class BattleScreen {
     // ── Player panel ──
     const panel = el('div',`
       position:relative;z-index:1;
-      flex:0 0 auto;padding:10px 12px 6px;
+      flex:1;min-height:0;display:flex;flex-direction:column;
+      padding:10px 12px 6px;
       background:rgba(10,10,30,0.95);
       border-top:1px solid rgba(212,175,55,0.4);
     `);
@@ -272,11 +273,11 @@ export class BattleScreen {
     }
 
     // ── Log ──
-    this.logEl = el('div',`color:#FFFDE7;font-size:13px;min-height:36px;line-height:1.4;font-family:${FONT};`);
+    this.logEl = el('div',`color:#FFFDE7;font-size:13px;min-height:36px;max-height:54px;overflow:hidden;line-height:1.4;font-family:${FONT};flex-shrink:0;`);
     panel.appendChild(this.logEl);
 
-    // ── Command area ──
-    this.commandEl = el('div','margin-top:6px;');
+    // ── Command area (scrollable) ──
+    this.commandEl = el('div','margin-top:6px;flex:1;min-height:0;overflow-y:auto;');
     panel.appendChild(this.commandEl);
 
     this.root.appendChild(panel);
@@ -516,17 +517,32 @@ export class BattleScreen {
     this.commandEl.appendChild(list);
   }
 
-  private buildItemMenu() {
+  private buildItemMenu(page = 0) {
     this.commandEl.innerHTML = '';
     const list = el('div','display:flex;flex-direction:column;gap:4px;');
+
+    const allInv = this.save.inventory.filter(e => e.qty > 0 && ITEM_MAP[e.itemId]?.type === 'consumable');
+
+    // Header row
+    const headerRow = el('div','display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;');
     const back = document.createElement('button');
     back.textContent = '← 戻る';
-    back.style.cssText = `margin-bottom:4px;padding:4px 10px;background:transparent;color:#8888AA;border:none;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    back.style.cssText = `padding:4px 10px;background:transparent;color:#8888AA;border:none;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
     back.addEventListener('click', () => { this.log('コマンドを選んでください'); this.buildCommandMenu(); });
-    list.appendChild(back);
+    headerRow.appendChild(back);
 
-    const inv = this.save.inventory.filter(e => e.qty > 0 && ITEM_MAP[e.itemId]?.type === 'consumable').slice(0, 8);
-    if (!inv.length) {
+    const PAGE_SIZE = 5;
+    const totalPages = Math.max(1, Math.ceil(allInv.length / PAGE_SIZE));
+    const p = Math.max(0, Math.min(page, totalPages - 1));
+    if (totalPages > 1) {
+      const pageLabel = el('div','color:#8888AA;font-size:11px;');
+      pageLabel.textContent = `${p + 1} / ${totalPages}`;
+      headerRow.appendChild(pageLabel);
+    }
+    list.appendChild(headerRow);
+
+    const inv = allInv.slice(p * PAGE_SIZE, (p + 1) * PAGE_SIZE);
+    if (!allInv.length) {
       const msg = el('div',`color:#555577;font-size:13px;padding:6px;font-family:${FONT};`);
       msg.textContent = 'アイテムがない';
       list.appendChild(msg);
@@ -545,7 +561,7 @@ export class BattleScreen {
         b.appendChild(n); b.appendChild(hint);
         b.addEventListener('click', () => {
           if (isHeal) {
-            this.buildAllyPicker('', () => this.buildItemMenu(), true, entry.itemId);
+            this.buildAllyPicker('', () => this.buildItemMenu(p), true, entry.itemId);
           } else {
             this.chooseAction('item', undefined, entry.itemId);
           }
@@ -553,6 +569,27 @@ export class BattleScreen {
         list.appendChild(b);
       });
     }
+
+    // Pagination row
+    if (totalPages > 1) {
+      const pageRow = el('div','display:flex;gap:6px;margin-top:4px;');
+      if (p > 0) {
+        const prev = document.createElement('button');
+        prev.textContent = '← 前';
+        prev.style.cssText = `flex:1;padding:5px 0;background:rgba(16,16,40,0.9);color:#AABBFF;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+        prev.addEventListener('click', () => this.buildItemMenu(p - 1));
+        pageRow.appendChild(prev);
+      }
+      if (p < totalPages - 1) {
+        const next = document.createElement('button');
+        next.textContent = '次 →';
+        next.style.cssText = `flex:1;padding:5px 0;background:rgba(16,16,40,0.9);color:#AABBFF;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+        next.addEventListener('click', () => this.buildItemMenu(p + 1));
+        pageRow.appendChild(next);
+      }
+      list.appendChild(pageRow);
+    }
+
     this.commandEl.appendChild(list);
   }
 
@@ -608,7 +645,7 @@ export class BattleScreen {
     });
 
     chain.then(() => {
-      this.delay(300, () => {
+      this.delay(500, () => {
         if (this.enemyCs.every(e => e.hp <= 0)) this.doVictory();
         else this.doEnemyTurns();
       });
@@ -617,9 +654,11 @@ export class BattleScreen {
 
   private executeAndWait(action: { actor: Combatant; type: 'attack'|'magic'|'item'|'run'; spellName?: string; itemId?: string; targetIndex: number; allyTargetId?: string }): Promise<void> {
     return new Promise(resolve => {
-      this.delay(80, () => {
+      // Brief pause before each action so player can see who's acting
+      this.log(`${action.actor.name}の番…`);
+      this.delay(350, () => {
         this.executeSingleAction(action);
-        const waitTime = action.type === 'run' ? 350 : 800;
+        const waitTime = action.type === 'run' ? 500 : 1100;
         this.delay(waitTime, resolve);
       });
     });
@@ -777,14 +816,19 @@ export class BattleScreen {
         const marker = this.companionMarkers[compIdx];
         const panel = this.enemyPanels[targetIdx];
         if (marker) {
-          (marker as HTMLElement).style.transition = 'transform 0.14s ease-in';
-          (marker as HTMLElement).style.transform = 'translateY(-10px) scale(1.12)';
+          (marker as HTMLElement).style.transition = 'transform 0.2s ease-in';
+          (marker as HTMLElement).style.transform = 'translateY(-16px) scale(1.18)';
           setTimeout(() => {
             if (panel) {
               panel.wrap.style.filter = 'brightness(2.5) saturate(0)';
-              setTimeout(() => { panel.wrap.style.filter = ''; }, 200);
+              // Shake
+              panel.wrap.style.transition = 'transform 0.05s';
+              panel.wrap.style.transform = 'translateX(-8px)';
+              setTimeout(() => panel.wrap.style.transform = 'translateX(8px)', 60);
+              setTimeout(() => panel.wrap.style.transform = 'translateX(-5px)', 120);
+              setTimeout(() => { panel.wrap.style.transform = ''; panel.wrap.style.filter = ''; }, 200);
             }
-            // Simple orb for companion magic
+            // Orb for companion magic
             if (action.type === 'magic' && panel) {
               const rootRect = this.root.getBoundingClientRect();
               const markerRect = (marker as HTMLElement).getBoundingClientRect();
@@ -800,9 +844,10 @@ export class BattleScreen {
             }
             doResolve();
             setTimeout(() => {
+              (marker as HTMLElement).style.transition = 'transform 0.2s ease-out';
               (marker as HTMLElement).style.transform = '';
-            }, 160);
-          }, 180);
+            }, 280);
+          }, 400);
         } else {
           if (panel) {
             panel.wrap.style.filter = 'brightness(2.5) saturate(0)';
