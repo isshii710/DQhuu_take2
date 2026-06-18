@@ -427,7 +427,7 @@ export class WorldRenderer {
       this.scene.fog = new THREE.Fog(0xf0c080, 28, 52);
       this.renderer.setClearColor(0x1a3a8a);
     } else {
-      this.scene.fog = new THREE.Fog(0x111122, 12, 22);
+      this.scene.fog = new THREE.Fog(0x111122, 16, 28);
       this.renderer.setClearColor(0x0a0a1a);
     }
 

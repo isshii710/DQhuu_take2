@@ -388,7 +388,7 @@ export class BattleScreen {
     this.updateTargetHighlight();
   }
 
-  private buildSkillMenu(actor: Combatant) {
+  private buildSkillMenu(actor: Combatant, page = 0) {
     this.commandEl.innerHTML = '';
 
     let className: string;
@@ -410,14 +410,29 @@ export class BattleScreen {
       this.delay(1000, () => { this.log('コマンドを選んでください'); this.buildCommandMenu(); });
       return;
     }
+
+    const PAGE_SIZE = 5;
+    const totalPages = Math.ceil(skills.length / PAGE_SIZE);
+    const p = Math.max(0, Math.min(page, totalPages - 1));
+    const pageSkills = skills.slice(p * PAGE_SIZE, (p + 1) * PAGE_SIZE);
+
     const list = el('div','display:flex;flex-direction:column;gap:4px;');
+
+    // Header row: back button + page indicator
+    const headerRow = el('div','display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;');
     const back = document.createElement('button');
     back.textContent = '← 戻る';
-    back.style.cssText = `margin-bottom:4px;padding:4px 10px;background:transparent;color:#8888AA;border:none;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    back.style.cssText = `padding:4px 10px;background:transparent;color:#8888AA;border:none;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
     back.addEventListener('click', () => { this.log('コマンドを選んでください'); this.buildCommandMenu(); });
-    list.appendChild(back);
+    headerRow.appendChild(back);
+    if (totalPages > 1) {
+      const pageLabel = el('div', 'color:#8888AA;font-size:11px;');
+      pageLabel.textContent = `${p + 1} / ${totalPages}`;
+      headerRow.appendChild(pageLabel);
+    }
+    list.appendChild(headerRow);
 
-    skills.forEach(s => {
+    pageSkills.forEach(s => {
       const b = document.createElement('button');
       const targetHint = s.targetType === 'ally' ? ' 〔味方〕' : s.targetType === 'all_allies' ? ' 〔全体〕' : s.targetType === 'all_enemies' ? ' 〔全敵〕' : s.targetType === 'self' ? ' 〔自分〕' : '';
       b.textContent = `${s.name}${targetHint}  MP${s.mpCost}`;
@@ -431,13 +446,34 @@ export class BattleScreen {
         } else if (s.targetType === 'all_enemies') {
           this.chooseAction('magic', s.name, undefined, '__all_enemies__');
         } else if (s.targetType === 'ally') {
-          this.buildAllyPicker(s.name, () => this.buildSkillMenu(actor));
+          this.buildAllyPicker(s.name, () => this.buildSkillMenu(actor, p));
         } else {
           this.chooseAction('magic', s.name);
         }
       });
       list.appendChild(b);
     });
+
+    // Pagination row
+    if (totalPages > 1) {
+      const pageRow = el('div', 'display:flex;gap:6px;margin-top:4px;');
+      if (p > 0) {
+        const prev = document.createElement('button');
+        prev.textContent = '← 前';
+        prev.style.cssText = `flex:1;padding:5px 0;background:rgba(16,16,40,0.9);color:#AABBFF;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+        prev.addEventListener('click', () => this.buildSkillMenu(actor, p - 1));
+        pageRow.appendChild(prev);
+      }
+      if (p < totalPages - 1) {
+        const next = document.createElement('button');
+        next.textContent = '次 →';
+        next.style.cssText = `flex:1;padding:5px 0;background:rgba(16,16,40,0.9);color:#AABBFF;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+        next.addEventListener('click', () => this.buildSkillMenu(actor, p + 1));
+        pageRow.appendChild(next);
+      }
+      list.appendChild(pageRow);
+    }
+
     this.commandEl.appendChild(list);
   }
 

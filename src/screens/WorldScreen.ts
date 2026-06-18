@@ -1,6 +1,6 @@
 import type { CharacterSave, MapId, Direction, NpcDef, ItemDef } from '../types';
 import type { PartyMemberDef } from '../data/partyMembers';
-import { TILE_SIZE, WALKABLE, ENCOUNTER_TILES, ENCOUNTER_RATE } from '../config';
+import { TILE_SIZE, WALKABLE, ENCOUNTER_TILES, ENCOUNTER_RATE, T } from '../config';
 import { getMapDef } from '../data/maps';
 import { writeSave } from '../systems/SaveSystem';
 import { randomEncounter, ENEMY_MAP, ENCOUNTER_GROUPS } from '../data/enemies';
@@ -239,7 +239,7 @@ export class WorldScreen {
       }
     } else {
       this.fieldEnemies = [];
-      if (mapDef.encounterGroup && !isDungeon(this.mapId)) this.spawnFieldEnemies();
+      if (mapDef.encounterGroup) this.spawnFieldEnemies();
     }
     this.preBattleMapId = null;
 
@@ -510,8 +510,7 @@ export class WorldScreen {
       targetX, targetY
     );
 
-    const isDungeon = (id: string) => id === 'dungeon' || id === 'dungeon2' || id === 'dungeon3';
-    if (mapDef.encounterGroup && !isDungeon(targetMap)) this.spawnFieldEnemies();
+    if (mapDef.encounterGroup) this.spawnFieldEnemies();
 
     // Minimap for new map
     this.minimapCvs?.remove();
@@ -571,13 +570,17 @@ export class WorldScreen {
     const npcSet = new Set(mapDef.npcs.map(n => `${n.tileX},${n.tileY}`));
     const px = this.save.position.tileX;
     const py = this.save.position.tileY;
+    const isDungeon = this.mapId === 'dungeon' || this.mapId === 'dungeon2' || this.mapId === 'dungeon3';
+    // Dungeons use FLOOR tiles; outdoor uses standard encounter tiles
+    const spawnTiles = isDungeon ? new Set([T.FLOOR]) : ENCOUNTER_TILES;
+    const safeZone = isDungeon ? 4 : 6;
 
     const candidates: {x: number; y: number}[] = [];
     for (let ty = 0; ty < rows; ty++) {
       for (let tx = 0; tx < cols; tx++) {
-        if (!ENCOUNTER_TILES.has(tiles[ty][tx])) continue;
+        if (!spawnTiles.has(tiles[ty][tx])) continue;
         if (npcSet.has(`${tx},${ty}`)) continue;
-        if (Math.abs(tx - px) < 6 && Math.abs(ty - py) < 6) continue;
+        if (Math.abs(tx - px) < safeZone && Math.abs(ty - py) < safeZone) continue;
         candidates.push({x: tx, y: ty});
       }
     }
@@ -585,7 +588,9 @@ export class WorldScreen {
 
     const group = mapDef.encounterGroup ?? 'world_field';
     const groups = ENCOUNTER_GROUPS[group] ?? ENCOUNTER_GROUPS['world_field'];
-    const count = Math.min(8, Math.max(5, Math.floor(candidates.length * 0.02)));
+    const count = isDungeon
+      ? Math.min(6, Math.max(3, Math.floor(candidates.length * 0.05)))
+      : Math.min(8, Math.max(5, Math.floor(candidates.length * 0.02)));
 
     for (let i = 0; i < Math.min(count, candidates.length); i++) {
       const pos = candidates[i];
