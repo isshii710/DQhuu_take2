@@ -228,6 +228,8 @@ export class WorldRenderer {
   private otherPlayerSprites = new Map<string, BillboardSprite>();
   private fieldEnemySprites = new Map<string, BillboardSprite>();
   private skyDome: THREE.Mesh | null = null;
+  private ambientLight!: THREE.AmbientLight;
+  private sunLight!: THREE.DirectionalLight;
   private buildingLights: THREE.PointLight[] = [];
 
   private targetCamX = 0;
@@ -253,12 +255,12 @@ export class WorldRenderer {
     this.camera.position.set(0, this.CAM_H, this.CAM_Z_OFFSET);
     this.camera.lookAt(0, 0, 0);
 
-    const ambient = new THREE.AmbientLight(0xffe6c4, 0.62);
-    const sun = new THREE.DirectionalLight(0xfff2d6, 1.15);
-    sun.position.set(6, 14, -3);
+    this.ambientLight = new THREE.AmbientLight(0xffe6c4, 0.62);
+    this.sunLight = new THREE.DirectionalLight(0xfff2d6, 1.15);
+    this.sunLight.position.set(6, 14, -3);
     const fill = new THREE.DirectionalLight(0x6688cc, 0.35);
     fill.position.set(-6, 8, 6);
-    this.scene.add(ambient, sun, fill);
+    this.scene.add(this.ambientLight, this.sunLight, fill);
 
     this.scene.add(this.mapGroup);
     this.scene.add(this.exitMarkers);
@@ -650,6 +652,57 @@ export class WorldRenderer {
     this.exitMarkers.children.forEach((c, i) => {
       (c as THREE.Mesh).rotation.z += delta * 0.0012 * (i % 2 === 0 ? 1 : -1);
     });
+  }
+
+  setTimeOfDay(hour: number) {
+    const h = ((hour % 24) + 24) % 24;
+    // Keyframes: [hour, skyTop(hex), skyHoriz(hex), ambColor(hex), ambIntensity, sunIntensity]
+    const keys: [number, number, number, number, number, number][] = [
+      [ 0, 0x020510, 0x080C30, 0x1A2040, 0.18, 0.0 ],
+      [ 5, 0x150830, 0xCC4010, 0x7060A0, 0.30, 0.1 ],
+      [ 6, 0x1A3060, 0xFF7030, 0xFFB070, 0.48, 0.4 ],
+      [ 8, 0x204080, 0x60A0FF, 0xFFE6C4, 0.60, 0.85],
+      [12, 0x1a3a8a, 0xf0c080, 0xFFE6C4, 0.62, 1.15],
+      [17, 0x162878, 0xFF9040, 0xFFD080, 0.56, 0.80],
+      [19, 0x1A0828, 0xFF3010, 0xFF7050, 0.38, 0.30],
+      [21, 0x050A1A, 0x0A1040, 0x2030A0, 0.20, 0.0 ],
+      [24, 0x020510, 0x080C30, 0x1A2040, 0.18, 0.0 ],
+    ];
+
+    let i = 0;
+    while (i < keys.length - 2 && keys[i + 1][0] <= h) i++;
+    const k0 = keys[i], k1 = keys[i + 1];
+    const t = (h - k0[0]) / (k1[0] - k0[0]);
+
+    const lerp = (a: number, b: number) => a + (b - a) * t;
+    const lerpHex = (ca: number, cb: number): number => {
+      const r = Math.round(lerp((ca >> 16) & 0xFF, (cb >> 16) & 0xFF));
+      const g = Math.round(lerp((ca >>  8) & 0xFF, (cb >>  8) & 0xFF));
+      const b = Math.round(lerp( ca        & 0xFF,  cb        & 0xFF));
+      return (r << 16) | (g << 8) | b;
+    };
+
+    const skyTop   = lerpHex(k0[1], k1[1]);
+    const skyHoriz = lerpHex(k0[2], k1[2]);
+    const ambColor = lerpHex(k0[3], k1[3]);
+
+    if (this.skyDome) {
+      const u = (this.skyDome.material as THREE.ShaderMaterial).uniforms;
+      u['topColor'].value.setHex(skyTop);
+      u['horizColor'].value.setHex(skyHoriz);
+    }
+
+    this.ambientLight.color.setHex(ambColor);
+    this.ambientLight.intensity = lerp(k0[4], k1[4]);
+    this.sunLight.intensity = lerp(k0[5], k1[5]);
+
+    if (this.scene.fog instanceof THREE.Fog) {
+      this.scene.fog.color.setHex(skyHoriz);
+    }
+    // For indoor/dungeon maps, sky dome is null so only update clear color for outdoor
+    if (this.skyDome) {
+      this.renderer.setClearColor(skyTop);
+    }
   }
 
   render() {

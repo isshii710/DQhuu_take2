@@ -35,6 +35,9 @@ const MAP_FLAGS: Partial<Record<MapId, string>> = {
   dungeon: 'dungeon_entered',
   dungeon2: 'dungeon2_entered',
   dungeon3: 'dungeon3_entered',
+  house1: 'house1_visited',
+  house2: 'house2_visited',
+  house3: 'house3_visited',
 };
 
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
@@ -91,6 +94,10 @@ export class WorldScreen {
 
   private minimapCvs: HTMLCanvasElement | null = null;
   private minimapCtx: CanvasRenderingContext2D | null = null;
+
+  // Day/night clock (1 game hour = 20 real seconds; starts at 10:00)
+  private gameHour = 10;
+  private gameClockAccum = 0;
 
   private shopLabels: Array<{ el: HTMLElement; worldX: number; worldZ: number }> = [];
   private exitLabels: Array<{ el: HTMLElement; worldX: number; worldZ: number }> = [];
@@ -218,6 +225,7 @@ export class WorldScreen {
     // Load map and spawn player
     const mapDef = getMapDef(this.mapId);
     this.renderer.loadMap(mapDef); // clears field enemy sprites via clearFieldEnemies()
+    this.renderer.setTimeOfDay(this.gameHour + this.gameClockAccum / 20000);
     this.playerSprite = this.renderer.spawnPlayer(ci, save.position.tileX, save.position.tileY);
 
     // Field enemies
@@ -285,6 +293,14 @@ export class WorldScreen {
 
   private update(delta: number) {
     if (this.mapTransitionCooldown > 0) this.mapTransitionCooldown = Math.max(0, this.mapTransitionCooldown - delta);
+
+    // Advance game clock: 20 real seconds = 1 game hour
+    this.gameClockAccum += delta;
+    if (this.gameClockAccum >= 20000) {
+      this.gameClockAccum -= 20000;
+      this.gameHour = (this.gameHour + 1) % 24;
+    }
+    this.renderer.setTimeOfDay(this.gameHour + this.gameClockAccum / 20000);
 
     // Per-enemy individual movement timers + smooth visual interpolation
     let anyMoved = false;

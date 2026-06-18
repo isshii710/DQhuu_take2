@@ -1,6 +1,6 @@
 export type ClassName = '戦士' | '魔法使い' | '回復師' | '盗賊';
 export type Direction = 'down' | 'up' | 'left' | 'right' | 'up-left' | 'up-right' | 'down-left' | 'down-right';
-export type MapId = 'world' | 'village' | 'castle' | 'dungeon' | 'dungeon2' | 'dungeon3';
+export type MapId = 'world' | 'village' | 'castle' | 'dungeon' | 'dungeon2' | 'dungeon3' | 'house1' | 'house2' | 'house3';
 
 export interface Stats {
   hp: number;

@@ -100,6 +100,46 @@ const CASTLE_TILES: number[][] = [
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
+// House interiors (10×8 each)  exit door at bottom-center (4,7)/(5,7)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// house1 — 農家のおじさんの家
+const HOUSE1_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Fl,Fl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Dr,Dr,Wl,Wl,Wl,Wl],
+];
+
+// house2 — 魔法使いのおばあさんの家
+const HOUSE2_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Fl,Fl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Dr,Dr,Wl,Wl,Wl,Wl],
+];
+
+// house3 — 若き剣士の家
+const HOUSE3_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Dr,Dr,Wl,Wl,Wl,Wl],
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 3-floor dungeon  (20×16 each)
 // B1F (dungeon)  : world entrance at bottom (9,14)/(10,14); stairs to B2F at (9,1)/(10,1)
 // B2F (dungeon2) : stairs up at (9,1)/(10,1); stairs down to B3F at (9,13)/(10,13)
@@ -221,8 +261,12 @@ export const MAP_DEFS: MapDef[] = [
       { id: 'medal_master', name: 'メダル親父', dialogue: ['ちいさなメダルを集めておるか？', '10枚で聖水、20枚でエリクサーと交換してやろう。'], tileX: 1, tileY: 6, spriteColor: 0xAAAA44 },
     ],
     exits: [
-      { tileX: 9,  tileY: 14, targetMap: 'world', targetX: 2, targetY: 3 },
-      { tileX: 10, tileY: 14, targetMap: 'world', targetX: 2, targetY: 3 },
+      { tileX: 9,  tileY: 14, targetMap: 'world',  targetX: 2,  targetY: 3 },
+      { tileX: 10, tileY: 14, targetMap: 'world',  targetX: 2,  targetY: 3 },
+      // House entrances — walk into door tile to enter
+      { tileX: 4,  tileY: 4,  targetMap: 'house1', targetX: 4,  targetY: 5 },
+      { tileX: 10, tileY: 4,  targetMap: 'house2', targetX: 4,  targetY: 5 },
+      { tileX: 15, tileY: 4,  targetMap: 'house3', targetX: 4,  targetY: 5 },
     ],
   },
   {
@@ -320,6 +364,69 @@ export const MAP_DEFS: MapDef[] = [
       { tileX: 10, tileY: 1,  targetMap: 'dungeon',  targetX: 10, targetY: 3  },
       { tileX: 9,  tileY: 13, targetMap: 'dungeon3', targetX: 9,  targetY: 2  },
       { tileX: 10, tileY: 13, targetMap: 'dungeon3', targetX: 10, targetY: 2  },
+    ],
+  },
+  {
+    id: 'house1',
+    name: '農家の家',
+    tiles: HOUSE1_TILES,
+    bgColor: 0x2A1A08,
+    npcs: [
+      {
+        id: 'farmer', name: '農家のおじさん',
+        dialogue: [
+          'おお、旅人か！ゆっくりしていきな。',
+          'この村はのどかでいい所だろ？',
+          '北の城に行く前に、しっかり装備を整えるんだぞ。',
+        ],
+        tileX: 5, tileY: 3, spriteColor: 0xCC9944,
+      },
+    ],
+    exits: [
+      { tileX: 4, tileY: 7, targetMap: 'village', targetX: 4,  targetY: 5 },
+      { tileX: 5, tileY: 7, targetMap: 'village', targetX: 4,  targetY: 5 },
+    ],
+  },
+  {
+    id: 'house2',
+    name: '魔法使いの家',
+    tiles: HOUSE2_TILES,
+    bgColor: 0x0A0A20,
+    npcs: [
+      {
+        id: 'old_mage', name: '魔法使いのおばあさん',
+        dialogue: [
+          'ふっふっふ、珍しい客じゃな。',
+          '魔法は心の力。焦らず修行を積むのじゃ。',
+          'グロスールを倒せるほどの力がおぬしにあるか？',
+        ],
+        tileX: 5, tileY: 3, spriteColor: 0xAA88FF,
+      },
+    ],
+    exits: [
+      { tileX: 4, tileY: 7, targetMap: 'village', targetX: 10, targetY: 5 },
+      { tileX: 5, tileY: 7, targetMap: 'village', targetX: 10, targetY: 5 },
+    ],
+  },
+  {
+    id: 'house3',
+    name: '剣士の家',
+    tiles: HOUSE3_TILES,
+    bgColor: 0x1A0A0A,
+    npcs: [
+      {
+        id: 'young_knight', name: '若き剣士',
+        dialogue: [
+          'やあ！俺も冒険に出たいんだが…',
+          '親父が「まだ早い」って言って聞かないんだ。',
+          '魔王を倒したら俺の話も聞いてくれるかな。',
+        ],
+        tileX: 5, tileY: 3, spriteColor: 0xFF6644,
+      },
+    ],
+    exits: [
+      { tileX: 4, tileY: 7, targetMap: 'village', targetX: 15, targetY: 5 },
+      { tileX: 5, tileY: 7, targetMap: 'village', targetX: 15, targetY: 5 },
     ],
   },
   {
