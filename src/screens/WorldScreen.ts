@@ -152,9 +152,9 @@ export class WorldScreen {
     `;
     this.uiRoot.appendChild(ctrlBar);
 
-    // VirtualJoystick — covers left 60% full height (floating, appears at touch)
+    // VirtualJoystick — covers full width above the button row (floating, appears at touch)
     const joyWrap = document.createElement('div');
-    joyWrap.style.cssText = 'position:absolute;top:0;bottom:100px;left:0;width:60%;pointer-events:auto;';
+    joyWrap.style.cssText = 'position:absolute;top:0;bottom:100px;left:0;right:0;pointer-events:auto;';
     this.uiRoot.appendChild(joyWrap);
     this.joystick = new VirtualJoystick(joyWrap, dir => {
       this.heldDir = dir;
