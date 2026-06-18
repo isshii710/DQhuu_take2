@@ -224,7 +224,7 @@ function applyShadow(obj: THREE.Object3D): void {
 
 export class WorldRenderer {
   readonly scene: THREE.Scene;
-  readonly camera: THREE.OrthographicCamera;
+  readonly camera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGLRenderer;
 
   private composer!: EffectComposer;
@@ -238,11 +238,13 @@ export class WorldRenderer {
   private otherPlayerSprites = new Map<string, BillboardSprite>();
   private fieldEnemySprites = new Map<string, BillboardSprite>();
   private skyDome: THREE.Mesh | null = null;
+  private ambientLight!: THREE.AmbientLight;
+  private sunLight!: THREE.DirectionalLight;
   private buildingLights: THREE.PointLight[] = [];
   private playerLantern: THREE.PointLight | null = null;
+  private playerLight: THREE.PointLight | null = null;
   private chestGroups = new Map<string, { lid: THREE.Mesh; opened: boolean }>();
 
-  private sun!: THREE.DirectionalLight;
   private blobShadowGroup = new THREE.Group();
   private blobShadowMat: THREE.MeshBasicMaterial | null = null;
   private playerBlob: THREE.Mesh | null = null;
@@ -254,9 +256,9 @@ export class WorldRenderer {
   private currentCamX = 0;
   private currentCamZ = 0;
 
-  private readonly CAM_H = 10;
-  private readonly CAM_Z_OFFSET = 9;
-  private readonly FRUSTUM = 5.5;
+  private readonly CAM_H = 12;
+  private readonly CAM_Z_OFFSET = 10;
+  private readonly FOV = 45; // perspective FOV in degrees
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
@@ -266,29 +268,28 @@ export class WorldRenderer {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0x0a0a1a, 22, 42);
+    this.scene.fog = new THREE.Fog(0x0a0a1a, 30, 60);
 
-    const aspect = canvas.clientWidth / canvas.clientHeight;
-    const f = this.FRUSTUM;
-    this.camera = new THREE.OrthographicCamera(-f, f, f / aspect, -f / aspect, 0.1, 100);
+    const aspect = canvas.clientWidth / canvas.clientHeight || 16 / 9;
+    this.camera = new THREE.PerspectiveCamera(this.FOV, aspect, 0.1, 120);
     this.camera.position.set(0, this.CAM_H, this.CAM_Z_OFFSET);
     this.camera.lookAt(0, 0, 0);
 
-    const ambient = new THREE.AmbientLight(0xffe6c4, 0.62);
-    this.sun = new THREE.DirectionalLight(0xfff2d6, 1.15);
-    this.sun.position.set(6, 14, -3);
-    this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(1024, 1024);
-    this.sun.shadow.camera.near = 0.5;
-    this.sun.shadow.camera.far = 50;
-    this.sun.shadow.camera.left   = -10;
-    this.sun.shadow.camera.right  =  10;
-    this.sun.shadow.camera.top    =  10;
-    this.sun.shadow.camera.bottom = -10;
-    this.sun.shadow.bias = -0.002;
+    this.ambientLight = new THREE.AmbientLight(0xffe6c4, 0.62);
+    this.sunLight = new THREE.DirectionalLight(0xfff2d6, 1.15);
+    this.sunLight.position.set(6, 14, -3);
+    this.sunLight.castShadow = true;
+    this.sunLight.shadow.mapSize.set(1024, 1024);
+    this.sunLight.shadow.camera.near = 0.5;
+    this.sunLight.shadow.camera.far = 50;
+    this.sunLight.shadow.camera.left   = -10;
+    this.sunLight.shadow.camera.right  =  10;
+    this.sunLight.shadow.camera.top    =  10;
+    this.sunLight.shadow.camera.bottom = -10;
+    this.sunLight.shadow.bias = -0.002;
     const fill = new THREE.DirectionalLight(0x6688cc, 0.35);
     fill.position.set(-6, 8, 6);
-    this.scene.add(ambient, this.sun, this.sun.target, fill);
+    this.scene.add(this.ambientLight, this.sunLight, this.sunLight.target, fill);
 
     this.scene.add(this.mapGroup);
     this.scene.add(this.exitMarkers);
@@ -324,12 +325,7 @@ export class WorldRenderer {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.renderer.setSize(w, h);
-    const aspect = w / h;
-    const f = this.FRUSTUM;
-    this.camera.left   = -f;
-    this.camera.right  =  f;
-    this.camera.top    =  f / aspect;
-    this.camera.bottom = -f / aspect;
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
 
     if (this.composer && this.bokehPass) {
@@ -462,7 +458,7 @@ export class WorldRenderer {
       this.scene.fog = new THREE.Fog(0xf0c080, 28, 52);
       this.renderer.setClearColor(0x1a3a8a);
     } else {
-      this.scene.fog = new THREE.Fog(0x111122, 12, 22);
+      this.scene.fog = new THREE.Fog(0x111122, 16, 28);
       this.renderer.setClearColor(0x0a0a1a);
     }
 
@@ -746,9 +742,9 @@ export class WorldRenderer {
     this.camera.lookAt(x, 0, z);
 
     // Keep shadow frustum centred on the visible area
-    this.sun.position.set(x + 6, 14, z - 3);
-    this.sun.target.position.set(x, 0, z);
-    this.sun.target.updateMatrixWorld();
+    this.sunLight.position.set(x + 6, 14, z - 3);
+    this.sunLight.target.position.set(x, 0, z);
+    this.sunLight.target.updateMatrixWorld();
 
     // Sync blob shadow + lantern to player position
     if (this.playerSprite) {
@@ -769,6 +765,13 @@ export class WorldRenderer {
     const flicker = 0.85 + Math.sin(Date.now() * 0.0034) * 0.12 + Math.sin(Date.now() * 0.0071) * 0.03;
     this.buildingLights.forEach(pl => { pl.intensity = pl.color.r > 0.7 ? 0.9 * flicker : 0.7 * flicker; });
 
+    // Lantern: follow player with gentle torch flicker
+    if (this.playerLight) {
+      const torchFlicker = 2.2 + Math.sin(Date.now() * 0.0091) * 0.3 + Math.sin(Date.now() * 0.017) * 0.15;
+      this.playerLight.intensity = torchFlicker;
+      this.playerLight.position.set(this.currentCamX, 1.2, this.currentCamZ);
+    }
+
     // Exit ring pulse
     const pulse = Math.sin(Date.now() * 0.0028) * 0.3 + 0.7;
     this.exitMaterials.forEach(m => { m.opacity = pulse; });
@@ -781,6 +784,68 @@ export class WorldRenderer {
     this.npcSprites.forEach(sp => {
       if (sp) sp.sprite.position.y = SPRITE_Y + npcBob;
     });
+  }
+
+  setTimeOfDay(hour: number) {
+    const h = ((hour % 24) + 24) % 24;
+    // Keyframes: [hour, skyTop(hex), skyHoriz(hex), ambColor(hex), ambIntensity, sunIntensity]
+    const keys: [number, number, number, number, number, number][] = [
+      [ 0, 0x020510, 0x080C30, 0x1A2040, 0.18, 0.0 ],
+      [ 5, 0x150830, 0xCC4010, 0x7060A0, 0.30, 0.1 ],
+      [ 6, 0x1A3060, 0xFF7030, 0xFFB070, 0.48, 0.4 ],
+      [ 8, 0x204080, 0x60A0FF, 0xFFE6C4, 0.60, 0.85],
+      [12, 0x1a3a8a, 0xf0c080, 0xFFE6C4, 0.62, 1.15],
+      [17, 0x162878, 0xFF9040, 0xFFD080, 0.56, 0.80],
+      [19, 0x1A0828, 0xFF3010, 0xFF7050, 0.38, 0.30],
+      [21, 0x050A1A, 0x0A1040, 0x2030A0, 0.20, 0.0 ],
+      [24, 0x020510, 0x080C30, 0x1A2040, 0.18, 0.0 ],
+    ];
+
+    let i = 0;
+    while (i < keys.length - 2 && keys[i + 1][0] <= h) i++;
+    const k0 = keys[i], k1 = keys[i + 1];
+    const t = (h - k0[0]) / (k1[0] - k0[0]);
+
+    const lerp = (a: number, b: number) => a + (b - a) * t;
+    const lerpHex = (ca: number, cb: number): number => {
+      const r = Math.round(lerp((ca >> 16) & 0xFF, (cb >> 16) & 0xFF));
+      const g = Math.round(lerp((ca >>  8) & 0xFF, (cb >>  8) & 0xFF));
+      const b = Math.round(lerp( ca        & 0xFF,  cb        & 0xFF));
+      return (r << 16) | (g << 8) | b;
+    };
+
+    const skyTop   = lerpHex(k0[1], k1[1]);
+    const skyHoriz = lerpHex(k0[2], k1[2]);
+    const ambColor = lerpHex(k0[3], k1[3]);
+
+    if (this.skyDome) {
+      const u = (this.skyDome.material as THREE.ShaderMaterial).uniforms;
+      u['topColor'].value.setHex(skyTop);
+      u['horizColor'].value.setHex(skyHoriz);
+    }
+
+    this.ambientLight.color.setHex(ambColor);
+    this.ambientLight.intensity = lerp(k0[4], k1[4]);
+    this.sunLight.intensity = lerp(k0[5], k1[5]);
+
+    if (this.scene.fog instanceof THREE.Fog) {
+      this.scene.fog.color.setHex(skyHoriz);
+    }
+    // For indoor/dungeon maps, sky dome is null so only update clear color for outdoor
+    if (this.skyDome) {
+      this.renderer.setClearColor(skyTop);
+    }
+  }
+
+  setPlayerLight(enabled: boolean) {
+    if (enabled && !this.playerLight) {
+      this.playerLight = new THREE.PointLight(0xFFAA44, 2.5, 6.5);
+      this.playerLight.position.set(this.currentCamX, 1.2, this.currentCamZ);
+      this.scene.add(this.playerLight);
+    } else if (!enabled && this.playerLight) {
+      this.scene.remove(this.playerLight);
+      this.playerLight = null;
+    }
   }
 
   render() {

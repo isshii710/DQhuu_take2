@@ -1,13 +1,11 @@
 import type { CharacterSave, EnemyDef } from '../types';
 import { COLORS } from '../config';
 import { getClassDef } from '../data/characters';
-import { QUESTS } from '../data/quests';
-import { checkQuestCompletion } from '../systems/QuestSystem';
 import {
   buildCombatant, buildEnemyCombatant, buildPartyMemberCombatant, resolveAction,
-  enemyAI, applyExpGain, applyTurnStartEffects, isAllDefeated, type Combatant,
+  enemyAI, applyExpGain, applyTurnStartEffects, isAllDefeated, type Combatant, type BattleAction,
 } from '../systems/BattleSystem';
-import { effectiveStats } from '../systems/InventorySystem';
+import { effectiveStats, memberEffectiveStats } from '../systems/InventorySystem';
 import { writeSave } from '../systems/SaveSystem';
 import { mpManager } from '../systems/MultiplayerManager';
 import { getEnemyCanvas, getHeroCanvas } from '../engine/TextureCache';
@@ -46,7 +44,9 @@ export class BattleScreen {
   private companionPanels: { hpFill: HTMLElement; hpLabel: HTMLElement }[] = [];
   private selectedEnemy = 0;
   private targetRings: HTMLElement[] = [];
+  private companionMarkers: HTMLElement[] = [];
   private playerMarker!: HTMLElement;
+  private heroSpriteEl!: HTMLElement; // only the hero canvas — animated separately
 
   private onEnd!: (save: CharacterSave, mapId: string) => void;
   private onDefeatCb?: () => void;
@@ -97,7 +97,10 @@ export class BattleScreen {
     const stats = effectiveStats(save);
     this.playerC = buildCombatant({ ...save, stats: { ...save.stats, ...stats } });
     this.enemyCs = enemies.map((e, i) => buildEnemyCombatant(e, i));
-    this.companionCs = getActiveCompanions(save).map((m, i) => buildPartyMemberCombatant(m, i));
+    this.companionCs = getActiveCompanions(save).map((m, i) => {
+      const eff = memberEffectiveStats(m);
+      return buildPartyMemberCombatant({ ...m, stats: { ...m.stats, ...eff } }, i);
+    });
     this.selectedEnemy = this.enemyCs.findIndex(e => e.hp > 0);
 
     this.buildUI();
@@ -198,6 +201,7 @@ export class BattleScreen {
     `);
 
     // Companion sprites (left of hero, smaller)
+    this.companionMarkers = [];
     for (const comp of this.companionCs) {
       const memberId = comp.id.replace('party_', '');
       const member = this.save.party.find(p => p.id === memberId);
@@ -208,22 +212,26 @@ export class BattleScreen {
       const cc2 = compCvs.getContext('2d')!;
       cc2.drawImage(getHeroCanvas(compCi), 6*32, 0, 32, 32, 0, 0, 32, 32);
       this.playerMarker.appendChild(compCvs);
+      this.companionMarkers.push(compCvs);
     }
 
-    // Hero sprite (main, facing enemies = frame 6 = up-facing)
+    // Hero sprite in its own wrapper so only hero moves during animateStepIn
+    this.heroSpriteEl = el('div', 'display:inline-block;');
     const heroCvs = document.createElement('canvas');
     heroCvs.width = 32; heroCvs.height = 32;
     heroCvs.style.cssText = 'width:72px;height:72px;image-rendering:pixelated;';
     const hcc = heroCvs.getContext('2d')!;
     hcc.drawImage(getHeroCanvas(ci), 6*32, 0, 32, 32, 0, 0, 32, 32);
-    this.playerMarker.appendChild(heroCvs);
+    this.heroSpriteEl.appendChild(heroCvs);
+    this.playerMarker.appendChild(this.heroSpriteEl);
 
     this.root.appendChild(this.playerMarker);
 
     // ── Player panel ──
     const panel = el('div',`
       position:relative;z-index:1;
-      flex:0 0 auto;padding:10px 12px 6px;
+      flex:1;min-height:0;display:flex;flex-direction:column;
+      padding:10px 12px 6px;
       background:rgba(10,10,30,0.95);
       border-top:1px solid rgba(212,175,55,0.4);
     `);
@@ -268,11 +276,11 @@ export class BattleScreen {
     }
 
     // ── Log ──
-    this.logEl = el('div',`color:#FFFDE7;font-size:13px;min-height:36px;line-height:1.4;font-family:${FONT};`);
+    this.logEl = el('div',`color:#FFFDE7;font-size:13px;min-height:36px;max-height:54px;overflow:hidden;line-height:1.4;font-family:${FONT};flex-shrink:0;`);
     panel.appendChild(this.logEl);
 
-    // ── Command area ──
-    this.commandEl = el('div','margin-top:6px;');
+    // ── Command area (scrollable) ──
+    this.commandEl = el('div','margin-top:6px;flex:1;min-height:0;overflow-y:auto;');
     panel.appendChild(this.commandEl);
 
     this.root.appendChild(panel);
@@ -387,7 +395,7 @@ export class BattleScreen {
     this.updateTargetHighlight();
   }
 
-  private buildSkillMenu(actor: Combatant) {
+  private buildSkillMenu(actor: Combatant, page = 0) {
     this.commandEl.innerHTML = '';
 
     let className: string;
@@ -404,39 +412,83 @@ export class BattleScreen {
 
     const cls = getClassDef(className);
     const skills = cls.skills.filter(s => s.level <= actorLevel);
-    if (!skills.length) {
-      this.log('まだ使える魔法がない！');
-      this.delay(1000, () => { this.log('コマンドを選んでください'); this.buildCommandMenu(); });
-      return;
-    }
+
+    const PAGE_SIZE = 3;
+    const totalPages = Math.max(1, Math.ceil((skills.length + 1) / PAGE_SIZE)); // +1 for 通常攻撃
+    const p = Math.max(0, Math.min(page, totalPages - 1));
+
     const list = el('div','display:flex;flex-direction:column;gap:4px;');
+
+    // Header row: back button + page indicator
+    const headerRow = el('div','display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;');
     const back = document.createElement('button');
     back.textContent = '← 戻る';
-    back.style.cssText = `margin-bottom:4px;padding:4px 10px;background:transparent;color:#8888AA;border:none;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    back.style.cssText = `padding:4px 10px;background:transparent;color:#8888AA;border:none;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
     back.addEventListener('click', () => { this.log('コマンドを選んでください'); this.buildCommandMenu(); });
-    list.appendChild(back);
+    headerRow.appendChild(back);
+    if (totalPages > 1) {
+      const pageLabel = el('div', 'color:#8888AA;font-size:11px;');
+      pageLabel.textContent = `${p + 1} / ${totalPages}`;
+      headerRow.appendChild(pageLabel);
+    }
+    list.appendChild(headerRow);
 
+    // Build item list: 通常攻撃 at index 0, then skills
+    const allEntries: Array<{ label: string; onClick: () => void }> = [];
+    allEntries.push({
+      label: '⚔ 通常攻撃 〔敵〕',
+      onClick: () => this.chooseAction('attack'),
+    });
     skills.forEach(s => {
-      const b = document.createElement('button');
       const targetHint = s.targetType === 'ally' ? ' 〔味方〕' : s.targetType === 'all_allies' ? ' 〔全体〕' : s.targetType === 'all_enemies' ? ' 〔全敵〕' : s.targetType === 'self' ? ' 〔自分〕' : '';
-      b.textContent = `${s.name}${targetHint}  MP${s.mpCost}`;
-      b.style.cssText = `padding:6px 8px;background:rgba(16,16,30,0.9);color:#FFFDE7;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;text-align:left;`;
-      b.addEventListener('click', () => {
-        if (actor.mp < s.mpCost) { this.log('MPが足りない！'); return; }
-        if (s.targetType === 'self') {
-          this.chooseAction('magic', s.name, undefined, actor.id);
-        } else if (s.targetType === 'all_allies') {
-          this.chooseAction('magic', s.name, undefined, '__all_allies__');
-        } else if (s.targetType === 'all_enemies') {
-          this.chooseAction('magic', s.name, undefined, '__all_enemies__');
-        } else if (s.targetType === 'ally') {
-          this.buildAllyPicker(s.name, () => this.buildSkillMenu(actor));
-        } else {
-          this.chooseAction('magic', s.name);
-        }
+      allEntries.push({
+        label: `${s.name}${targetHint}  MP${s.mpCost}`,
+        onClick: () => {
+          if (actor.mp < s.mpCost) { this.log('MPが足りない！'); return; }
+          if (s.targetType === 'self') {
+            this.chooseAction('magic', s.name, undefined, actor.id);
+          } else if (s.targetType === 'all_allies') {
+            this.chooseAction('magic', s.name, undefined, '__all_allies__');
+          } else if (s.targetType === 'all_enemies') {
+            this.chooseAction('magic', s.name, undefined, '__all_enemies__');
+          } else if (s.targetType === 'ally') {
+            this.buildAllyPicker(s.name, () => this.buildSkillMenu(actor, p));
+          } else {
+            this.chooseAction('magic', s.name);
+          }
+        },
       });
+    });
+
+    const pageEntries = allEntries.slice(p * PAGE_SIZE, (p + 1) * PAGE_SIZE);
+    pageEntries.forEach(entry => {
+      const b = document.createElement('button');
+      b.textContent = entry.label;
+      b.style.cssText = `padding:6px 8px;background:rgba(16,16,30,0.9);color:#FFFDE7;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;text-align:left;`;
+      b.addEventListener('click', entry.onClick);
       list.appendChild(b);
     });
+
+    // Pagination row
+    if (totalPages > 1) {
+      const pageRow = el('div', 'display:flex;gap:6px;margin-top:4px;');
+      if (p > 0) {
+        const prev = document.createElement('button');
+        prev.textContent = '← 前';
+        prev.style.cssText = `flex:1;padding:5px 0;background:rgba(16,16,40,0.9);color:#AABBFF;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+        prev.addEventListener('click', () => this.buildSkillMenu(actor, p - 1));
+        pageRow.appendChild(prev);
+      }
+      if (p < totalPages - 1) {
+        const next = document.createElement('button');
+        next.textContent = '次 →';
+        next.style.cssText = `flex:1;padding:5px 0;background:rgba(16,16,40,0.9);color:#AABBFF;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+        next.addEventListener('click', () => this.buildSkillMenu(actor, p + 1));
+        pageRow.appendChild(next);
+      }
+      list.appendChild(pageRow);
+    }
+
     this.commandEl.appendChild(list);
   }
 
@@ -476,17 +528,32 @@ export class BattleScreen {
     this.commandEl.appendChild(list);
   }
 
-  private buildItemMenu() {
+  private buildItemMenu(page = 0) {
     this.commandEl.innerHTML = '';
     const list = el('div','display:flex;flex-direction:column;gap:4px;');
+
+    const allInv = this.save.inventory.filter(e => e.qty > 0 && ITEM_MAP[e.itemId]?.type === 'consumable');
+
+    // Header row
+    const headerRow = el('div','display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;');
     const back = document.createElement('button');
     back.textContent = '← 戻る';
-    back.style.cssText = `margin-bottom:4px;padding:4px 10px;background:transparent;color:#8888AA;border:none;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    back.style.cssText = `padding:4px 10px;background:transparent;color:#8888AA;border:none;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
     back.addEventListener('click', () => { this.log('コマンドを選んでください'); this.buildCommandMenu(); });
-    list.appendChild(back);
+    headerRow.appendChild(back);
 
-    const inv = this.save.inventory.filter(e => e.qty > 0 && ITEM_MAP[e.itemId]?.type === 'consumable').slice(0, 8);
-    if (!inv.length) {
+    const PAGE_SIZE = 3;
+    const totalPages = Math.max(1, Math.ceil(allInv.length / PAGE_SIZE));
+    const p = Math.max(0, Math.min(page, totalPages - 1));
+    if (totalPages > 1) {
+      const pageLabel = el('div','color:#8888AA;font-size:11px;');
+      pageLabel.textContent = `${p + 1} / ${totalPages}`;
+      headerRow.appendChild(pageLabel);
+    }
+    list.appendChild(headerRow);
+
+    const inv = allInv.slice(p * PAGE_SIZE, (p + 1) * PAGE_SIZE);
+    if (!allInv.length) {
       const msg = el('div',`color:#555577;font-size:13px;padding:6px;font-family:${FONT};`);
       msg.textContent = 'アイテムがない';
       list.appendChild(msg);
@@ -505,7 +572,7 @@ export class BattleScreen {
         b.appendChild(n); b.appendChild(hint);
         b.addEventListener('click', () => {
           if (isHeal) {
-            this.buildAllyPicker('', () => this.buildItemMenu(), true, entry.itemId);
+            this.buildAllyPicker('', () => this.buildItemMenu(p), true, entry.itemId);
           } else {
             this.chooseAction('item', undefined, entry.itemId);
           }
@@ -513,6 +580,27 @@ export class BattleScreen {
         list.appendChild(b);
       });
     }
+
+    // Pagination row
+    if (totalPages > 1) {
+      const pageRow = el('div','display:flex;gap:6px;margin-top:4px;');
+      if (p > 0) {
+        const prev = document.createElement('button');
+        prev.textContent = '← 前';
+        prev.style.cssText = `flex:1;padding:5px 0;background:rgba(16,16,40,0.9);color:#AABBFF;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+        prev.addEventListener('click', () => this.buildItemMenu(p - 1));
+        pageRow.appendChild(prev);
+      }
+      if (p < totalPages - 1) {
+        const next = document.createElement('button');
+        next.textContent = '次 →';
+        next.style.cssText = `flex:1;padding:5px 0;background:rgba(16,16,40,0.9);color:#AABBFF;border:1px solid rgba(51,68,102,0.7);border-radius:3px;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+        next.addEventListener('click', () => this.buildItemMenu(p + 1));
+        pageRow.appendChild(next);
+      }
+      list.appendChild(pageRow);
+    }
+
     this.commandEl.appendChild(list);
   }
 
@@ -541,14 +629,13 @@ export class BattleScreen {
     }
   }
 
-  // ─── Execute all pending actions ─────────────────────────────────────────────
+  // ─── Execute all pending actions (speed-ordered) ────────────────────────────
 
   private executeAllActions() {
     this.phase = 'executing';
     this.commandEl.innerHTML = '';
 
     if (this.isMultiplayer) {
-      // Hero-only multiplayer path unchanged
       const heroAction = this.pendingActions.find(a => a.actor.id === this.playerC.id);
       if (heroAction) {
         mpManager.submitAction({
@@ -562,18 +649,99 @@ export class BattleScreen {
       return;
     }
 
-    let d = 0;
-    this.pendingActions.forEach(action => {
-      this.delay(d, () => this.executeSingleAction(action));
-      d += 900;
-    });
+    // Build unified turn list: party actions + enemy AI decisions
+    type TurnEntry =
+      | { kind: 'party'; spd: number; pending: typeof this.pendingActions[0] }
+      | { kind: 'enemy'; spd: number; enemy: Combatant; action: BattleAction; originalTargetId: string };
 
-    this.delay(d, () => {
-      if (this.enemyCs.every(e => e.hp <= 0)) {
-        this.doVictory();
-      } else {
-        this.doEnemyTurns();
-      }
+    const alliedTargets = [this.playerC, ...this.companionCs.filter(c => c.hp > 0)];
+    const livingEnemies = this.enemyCs.filter(e => e.hp > 0);
+
+    const turns: TurnEntry[] = [];
+
+    for (const pa of this.pendingActions) {
+      turns.push({ kind: 'party', spd: pa.actor.spd, pending: pa });
+    }
+    for (const enemy of livingEnemies) {
+      const action = enemyAI(enemy, alliedTargets);
+      turns.push({ kind: 'enemy', spd: enemy.spd, enemy, action, originalTargetId: action.targetId ?? this.playerC.id });
+    }
+
+    // Sort by speed desc, small random tiebreaker
+    turns.sort((a, b) => (b.spd - a.spd) + (Math.random() - 0.5) * 2);
+
+    let chain = Promise.resolve();
+    for (const turn of turns) {
+      chain = chain.then(() => {
+        if (turn.kind === 'party') {
+          if (turn.pending.actor.hp <= 0) return Promise.resolve();
+          return this.executeAndWait(turn.pending);
+        } else {
+          if (turn.enemy.hp <= 0) return Promise.resolve();
+          return this.executeEnemyTurn(turn.enemy, turn.action, turn.originalTargetId);
+        }
+      });
+    }
+
+    chain.then(() => {
+      this.delay(400, () => {
+        if (this.enemyCs.every(e => e.hp <= 0)) this.doVictory();
+        else if (isAllDefeated([this.playerC, ...this.companionCs])) this.doDefeat();
+        else this.startCommandPhase();
+      });
+    });
+  }
+
+  private executeEnemyTurn(enemy: Combatant, action: BattleAction, originalTargetId: string): Promise<void> {
+    return new Promise(resolve => {
+      this.log(`${enemy.name}の番…`);
+      this.delay(350, () => {
+        // Re-pick target if original is dead
+        const alliedTargets = [this.playerC, ...this.companionCs.filter(c => c.hp > 0)];
+        const target = alliedTargets.find(t => t.id === originalTargetId && t.hp > 0)
+                       ?? alliedTargets[0];
+        if (!target) { resolve(); return; }
+
+        const result = resolveAction(enemy, { ...action, targetId: target.id }, target);
+        this.log(result.text);
+
+        if (result.damage) {
+          if (target.id === this.playerC.id) {
+            this.animatePlayerHit();
+            this.showDmg(-1, result.damage, true);
+            this.save.stats.hp = this.playerC.hp;
+            this.refreshPlayerBar();
+          } else {
+            const ci = this.companionCs.indexOf(target);
+            if (ci >= 0) {
+              const marker = this.companionMarkers[ci] as HTMLElement | undefined;
+              if (marker) {
+                marker.style.transition = 'transform 0.05s';
+                marker.style.transform = 'translateX(8px)';
+                setTimeout(() => { marker.style.transform = 'translateX(-6px)'; }, 60);
+                setTimeout(() => { marker.style.transform = ''; marker.style.transition = ''; }, 130);
+              }
+              this.refreshCompanionBar(ci);
+              const m = this.save.party.find(p => `party_${p.id}` === target.id);
+              if (m) m.stats.hp = target.hp;
+            }
+          }
+        }
+
+        this.delay(1000, resolve);
+      });
+    });
+  }
+
+  private executeAndWait(action: { actor: Combatant; type: 'attack'|'magic'|'item'|'run'; spellName?: string; itemId?: string; targetIndex: number; allyTargetId?: string }): Promise<void> {
+    return new Promise(resolve => {
+      // Brief pause before each action so player can see who's acting
+      this.log(`${action.actor.name}の番…`);
+      this.delay(350, () => {
+        this.executeSingleAction(action);
+        const waitTime = action.type === 'run' ? 500 : 1100;
+        this.delay(waitTime, resolve);
+      });
     });
   }
 
@@ -722,14 +890,52 @@ export class BattleScreen {
 
     if ((action.type === 'attack' || action.type === 'magic') && target && target.hp > 0) {
       if (isHero) {
-        this.animateStepIn(targetIdx, action.type === 'magic').then(doResolve);
+        this.animateStepIn(targetIdx, action.type === 'magic', action.spellName).then(doResolve);
       } else {
+        // Companion step-up animation before attack
+        const compIdx = this.companionCs.indexOf(action.actor);
+        const marker = this.companionMarkers[compIdx];
         const panel = this.enemyPanels[targetIdx];
-        if (panel) {
-          panel.wrap.style.filter = 'brightness(2.5) saturate(0)';
-          setTimeout(() => { panel.wrap.style.filter = ''; }, 180);
+        if (marker) {
+          (marker as HTMLElement).style.transition = 'transform 0.2s ease-in';
+          (marker as HTMLElement).style.transform = 'translateY(-16px) scale(1.18)';
+          setTimeout(() => {
+            if (panel) {
+              panel.wrap.style.filter = 'brightness(2.5) saturate(0)';
+              // Shake
+              panel.wrap.style.transition = 'transform 0.05s';
+              panel.wrap.style.transform = 'translateX(-8px)';
+              setTimeout(() => panel.wrap.style.transform = 'translateX(8px)', 60);
+              setTimeout(() => panel.wrap.style.transform = 'translateX(-5px)', 120);
+              setTimeout(() => { panel.wrap.style.transform = ''; panel.wrap.style.filter = ''; }, 200);
+            }
+            // Orb for companion magic
+            if (action.type === 'magic' && panel) {
+              const rootRect = this.root.getBoundingClientRect();
+              const markerRect = (marker as HTMLElement).getBoundingClientRect();
+              const enemyRect = panel.wrap.getBoundingClientRect();
+              const info = this.spellEffectInfo(action.spellName ?? '');
+              this.shootOrb(
+                markerRect.left - rootRect.left + markerRect.width / 2,
+                markerRect.top  - rootRect.top  + markerRect.height / 2,
+                enemyRect.left  - rootRect.left + enemyRect.width  / 2,
+                enemyRect.top   - rootRect.top  + enemyRect.height / 2,
+                info.color,
+              );
+            }
+            doResolve();
+            setTimeout(() => {
+              (marker as HTMLElement).style.transition = 'transform 0.2s ease-out';
+              (marker as HTMLElement).style.transform = '';
+            }, 280);
+          }, 400);
+        } else {
+          if (panel) {
+            panel.wrap.style.filter = 'brightness(2.5) saturate(0)';
+            setTimeout(() => { panel.wrap.style.filter = ''; }, 200);
+          }
+          doResolve();
         }
-        doResolve();
       }
     } else {
       doResolve();
@@ -738,13 +944,14 @@ export class BattleScreen {
 
   // ─── Step-in animation ──────────────────────────────────────────────────────
 
-  private animateStepIn(enemyIndex: number, isMagic: boolean): Promise<void> {
+  private animateStepIn(enemyIndex: number, isMagic: boolean, spellName?: string): Promise<void> {
     return new Promise(resolve => {
       const panel = this.enemyPanels[enemyIndex];
-      if (!panel || !this.playerMarker) { resolve(); return; }
+      if (!panel || !this.heroSpriteEl) { resolve(); return; }
 
-      const markerRect = this.playerMarker.getBoundingClientRect();
+      const markerRect = this.heroSpriteEl.getBoundingClientRect();
       const enemyRect = panel.wrap.getBoundingClientRect();
+      const rootRect = this.root.getBoundingClientRect();
 
       const markerCx = markerRect.left + markerRect.width / 2;
       const markerCy = markerRect.top + markerRect.height / 2;
@@ -753,95 +960,35 @@ export class BattleScreen {
       const dx = enemyCx - markerCx;
       const dy = enemyCy - markerCy;
 
-      // Step toward enemy
-      this.playerMarker.style.transition = 'transform 0.18s ease-in';
-      this.playerMarker.style.transform = `translate(${dx * 0.6}px, ${dy * 0.7}px)`;
+      // Only hero sprite steps forward — companions stay in place
+      this.heroSpriteEl.style.transition = 'transform 0.18s ease-in';
+      this.heroSpriteEl.style.transform = `translate(${dx * 0.6}px, ${dy * 0.7}px)`;
 
       setTimeout(() => {
-        // Flash enemy red
         panel.wrap.style.filter = 'brightness(3) saturate(0) sepia(1) hue-rotate(-10deg)';
 
-        // Shake
         panel.wrap.style.transition = 'transform 0.05s';
         panel.wrap.style.transform = 'translateX(-8px)';
         setTimeout(() => panel.wrap.style.transform = 'translateX(8px)', 60);
         setTimeout(() => panel.wrap.style.transform = 'translateX(-5px)', 120);
         setTimeout(() => { panel.wrap.style.transform = 'translateX(0)'; panel.wrap.style.filter = ''; }, 200);
 
-        // For magic: shoot a projectile
         if (isMagic) {
-          const orb = el('div', `
-            position:absolute;width:14px;height:14px;border-radius:50%;
-            background:#AACCFF;box-shadow:0 0 12px #88AAFF;
-            pointer-events:none;z-index:15;
-            transition:all 0.15s linear;
-          `);
-          const rootRect = this.root.getBoundingClientRect();
-          const px = rootRect.width/2 - 7;
-          const py = rootRect.height - 130 - 26;
-          orb.style.left = px + 'px';
-          orb.style.top = py + 'px';
-          this.root.appendChild(orb);
-          requestAnimationFrame(() => {
-            orb.style.left = (enemyRect.left - rootRect.left + enemyRect.width/2 - 7) + 'px';
-            orb.style.top = (enemyRect.top - rootRect.top + enemyRect.height/2 - 7) + 'px';
-          });
-          setTimeout(() => orb.remove(), 200);
+          this.shootOrb(
+            markerCx - rootRect.left,
+            markerCy - rootRect.top,
+            enemyRect.left - rootRect.left + enemyRect.width  / 2,
+            enemyRect.top  - rootRect.top  + enemyRect.height / 2,
+            this.spellEffectInfo(spellName ?? '').color,
+          );
         }
 
-        // Step back
         setTimeout(() => {
-          this.playerMarker.style.transition = 'transform 0.15s ease-out';
-          this.playerMarker.style.transform = 'translate(0,0)';
+          this.heroSpriteEl.style.transition = 'transform 0.15s ease-out';
+          this.heroSpriteEl.style.transform = 'translate(0,0)';
           setTimeout(resolve, 180);
         }, 220);
       }, 200);
-    });
-  }
-
-  private doEnemyTurns() {
-    const living = this.enemyCs.filter(e => e.hp > 0);
-    const alliedTargets = [this.playerC, ...this.companionCs.filter(c => c.hp > 0)];
-    let d = 0;
-    living.forEach(enemy => {
-      this.delay(d, () => {
-        const action = enemyAI(enemy, alliedTargets);
-        // Handle enemy flee (metal series)
-        if (action.type === 'run') {
-          this.log(`${enemy.name}は逃げ出した！`);
-          (enemy as any).fled = true;
-          enemy.hp = 0;
-          const idx = this.enemyCs.indexOf(enemy);
-          if (idx >= 0 && this.enemyPanels[idx]) {
-            this.enemyPanels[idx].hpLabel.textContent = '逃げた';
-            this.enemyPanels[idx].wrap.style.opacity = '0.4';
-          }
-          return;
-        }
-        const target = alliedTargets.find(t => t.id === action.targetId) ?? this.playerC;
-        const result = resolveAction(enemy, action, target);
-        this.log(result.text);
-        if (result.damage) {
-          if (target.id === this.playerC.id) {
-            this.showDmg(-1, result.damage, true);
-            this.save.stats.hp = this.playerC.hp;
-            this.refreshPlayerBar();
-          } else {
-            // 仲間がダメージを受けた場合
-            const ci = this.companionCs.indexOf(target);
-            if (ci >= 0) this.refreshCompanionBar(ci);
-            // sync hp back to save
-            const m = this.save.party.find(p => `party_${p.id}` === target.id);
-            if (m) m.stats.hp = target.hp;
-          }
-        }
-      });
-      d += 750;
-    });
-    this.delay(d + 350, () => {
-      const allDead = isAllDefeated([this.playerC, ...this.companionCs]);
-      if (allDead || this.playerC.hp <= 0) { this.doDefeat(); return; }
-      this.startCommandPhase();
     });
   }
 
@@ -902,7 +1049,8 @@ export class BattleScreen {
     num.textContent = `-${dmg}`;
     num.style.color = toPlayer ? '#FF8888' : '#FF4444';
     const panel = this.enemyPanels[enemyIndex];
-    const rect = (panel ? panel.wrap : this.root).getBoundingClientRect();
+    const ref = panel ? panel.wrap : (this.playerMarker ?? this.root);
+    const rect = ref.getBoundingClientRect();
     const rootRect = this.root.getBoundingClientRect();
     num.style.left = (rect.left - rootRect.left + rect.width/2 - 20) + 'px';
     num.style.top  = (rect.top  - rootRect.top + 10) + 'px';
@@ -914,38 +1062,32 @@ export class BattleScreen {
     setTimeout(() => num.remove(), 900);
   }
 
+  private animatePlayerHit() {
+    if (!this.playerMarker) return;
+    this.playerMarker.style.transition = 'transform 0.05s';
+    this.playerMarker.style.transform = 'translateX(10px)';
+    setTimeout(() => { this.playerMarker.style.transform = 'translateX(-10px)'; }, 60);
+    setTimeout(() => { this.playerMarker.style.transform = 'translateX(6px)'; }, 120);
+    setTimeout(() => { this.playerMarker.style.transform = ''; this.playerMarker.style.transition = ''; }, 190);
+  }
+
   // ─── Victory / Defeat ───────────────────────────────────────────────────────
 
   private doVictory() {
     this.phase = 'victory';
-    // Only count non-fled enemies for exp/gold/quests
-    const totalExp  = this.enemies.reduce((s, e, i) => s + ((this.enemyCs[i] as any)?.fled ? 0 : e.exp),  0);
-    const totalGold = this.enemies.reduce((s, e, i) => s + ((this.enemyCs[i] as any)?.fled ? 0 : e.gold), 0);
+    const totalExp  = this.enemies.reduce((s,e) => s+e.exp,  0);
+    const totalGold = this.enemies.reduce((s,e) => s+e.gold, 0);
     const levelResult = applyExpGain(this.save, totalExp);
     const partyLevelUps = givePartyExp(this.save, totalExp);
     this.save.stats.hp = this.playerC.hp;
     this.save.stats.mp = this.playerC.mp;
     this.save.gold += totalGold;
-
-    // Track quest kills (non-fled enemies only)
-    if (!this.save.questKills) this.save.questKills = {};
-    for (let i = 0; i < this.enemies.length; i++) {
-      if (!(this.enemyCs[i] as any)?.fled) {
-        const eid = this.enemies[i].id;
-        this.save.questKills[eid] = (this.save.questKills[eid] ?? 0) + 1;
-      }
-    }
-    const completedQuests = checkQuestCompletion(this.save);
     writeSave(this.save);
 
     let msg = `★ 勝利！ ★\n\n${totalExp} EXP 獲得！\n${totalGold} G 獲得！`;
     if (levelResult.leveled) msg += `\n\n${this.save.name} レベルアップ！ Lv.${levelResult.newLevel}`;
     for (const lu of partyLevelUps) {
       msg += `\n${lu.name} レベルアップ！ Lv.${lu.newLevel}`;
-    }
-    for (const qid of completedQuests) {
-      const q = QUESTS.find(q => q.id === qid);
-      if (q) msg += `\n\n✨ クエスト達成：${q.name}！`;
     }
     this.showModal(msg, '#FFD700');
     this.delay(2800, () => this.finish(true, false));
@@ -1030,6 +1172,35 @@ export class BattleScreen {
         this.buildCommandMenu();
       }
     });
+  }
+
+  private spellEffectInfo(spellName: string): { color: string } {
+    const fire  = ['ギラ','イオ','毒針'];
+    const heal  = ['ヒール','全体ヒール','ベホマ','復活の光'];
+    const dark  = ['マヌーサ','ラリホー','煙幕','スロウ'];
+    const buff  = ['鼓舞','バリア','スカラ'];
+    if (fire.includes(spellName))  return { color: '#FF6622' };
+    if (heal.includes(spellName))  return { color: '#44FF88' };
+    if (dark.includes(spellName))  return { color: '#AA44FF' };
+    if (buff.includes(spellName))  return { color: '#FFD700' };
+    return { color: '#88CCFF' };
+  }
+
+  private shootOrb(startX: number, startY: number, endX: number, endY: number, color: string) {
+    const orb = el('div', `
+      position:absolute;width:16px;height:16px;border-radius:50%;
+      background:${color};box-shadow:0 0 14px ${color};
+      pointer-events:none;z-index:15;
+      transition:left 0.18s linear, top 0.18s linear;
+    `);
+    orb.style.left = (startX - 8) + 'px';
+    orb.style.top  = (startY - 8) + 'px';
+    this.root.appendChild(orb);
+    requestAnimationFrame(() => {
+      orb.style.left = (endX - 8) + 'px';
+      orb.style.top  = (endY - 8) + 'px';
+    });
+    setTimeout(() => orb.remove(), 280);
   }
 
   private delay(ms: number, fn: ()=>void) {

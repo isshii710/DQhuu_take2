@@ -1,17 +1,16 @@
-import type { CharacterSave, ClassName, MapId } from '../types';
-import type { Equipment } from '../types';
+import type { CharacterSave, PartyMember } from '../types';
+import type { Equipment, ClassName } from '../types';
 import { ITEMS } from '../data/items';
 import { ENEMIES } from '../data/enemies';
+import { CLASS_DEFS, calcStats } from '../data/characters';
+import { TREASURE_MAPS, BOSS_LEVEL_THRESHOLDS, getBossDropRate } from '../data/treasureMaps';
 import { effectiveStats, equipItem, unequipSlot, memberEquipItem, memberUnequipSlot } from '../systems/InventorySystem';
 import { writeSave } from '../systems/SaveSystem';
 import { setActive, setBench, MAX_ACTIVE_COMPANIONS } from '../systems/PartySystem';
-import { CLASS_DEFS, calcStats } from '../data/characters';
-import { TREASURE_MAPS, BOSS_LEVEL_THRESHOLDS, getBossDropRate } from '../data/treasureMaps';
-import { QUESTS } from '../data/quests';
-import type { PartyMember } from '../types';
+import type { MapId } from '../types';
 
-type Tab = 'status'|'equipment'|'items'|'party'|'job'|'maps'|'quests'|'field'|'book';
-type EquipTarget = 'hero' | string;
+type Tab = 'status'|'equipment'|'items'|'party'|'field'|'book'|'job'|'maps';
+type EquipTarget = 'hero' | string; // 'hero' or member.id
 
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
 
@@ -39,14 +38,8 @@ export class MenuScreen {
     this.root.addEventListener('click', e => { if (e.target===this.root) this.close(); });
   }
 
-  open(
-    save: CharacterSave,
-    onClose: (save: CharacterSave) => void,
-    onFieldAction?: (action: string) => void,
-    onOpenGacha?: () => void,
-    onOpenCraft?: () => void,
-    onEnterMap?: (mapId: MapId) => void,
-  ) {
+  open(save: CharacterSave, onClose: (save: CharacterSave)=>void, onFieldAction?: (action: string) => void,
+       onOpenGacha?: () => void, onOpenCraft?: () => void, onEnterMap?: (mapId: MapId) => void) {
     this.save = save;
     this.onClose = onClose;
     this.onFieldAction = onFieldAction;
@@ -88,11 +81,7 @@ export class MenuScreen {
     // Tabs
     const tabBar = document.createElement('div');
     tabBar.style.cssText='display:flex;gap:4px;padding:8px 12px 0;';
-    const tabs: {id:Tab;label:string}[] = [
-      {id:'status',label:'ステータス'},{id:'equipment',label:'装備'},{id:'items',label:'道具'},
-      {id:'party',label:'仲間'},{id:'job',label:'転職'},{id:'maps',label:'地図'},
-      {id:'quests',label:'クエスト'},{id:'field',label:'フィールド'},{id:'book',label:'図鑑'},
-    ];
+    const tabs: {id:Tab;label:string}[] = [{id:'status',label:'ステータス'},{id:'equipment',label:'装備'},{id:'items',label:'アイテム'},{id:'party',label:'パーティ'},{id:'job',label:'転職'},{id:'maps',label:'地図'},{id:'field',label:'フィールド'},{id:'book',label:'図鑑'}];
     tabs.forEach(t => {
       const b = document.createElement('button');
       const active = t.id===this.tab;
@@ -121,15 +110,14 @@ export class MenuScreen {
 
     this.root.appendChild(panel);
 
-    if      (this.tab==='status')    this.buildStatus();
+    if (this.tab==='status')    this.buildStatus();
     else if (this.tab==='equipment') this.buildEquipment();
-    else if (this.tab==='items')     this.buildItems();
-    else if (this.tab==='party')     this.buildParty();
-    else if (this.tab==='job')       this.buildJob();
-    else if (this.tab==='maps')      this.buildMaps();
-    else if (this.tab==='quests')    this.buildQuests();
-    else if (this.tab==='field')     this.buildField();
-    else                             this.buildBook();
+    else if (this.tab==='items') this.buildItems();
+    else if (this.tab==='party') this.buildParty();
+    else if (this.tab==='job')   this.buildJob();
+    else if (this.tab==='maps')  this.buildMaps();
+    else if (this.tab==='field') this.buildField();
+    else this.buildBook();
   }
 
   private buildStatus() {
@@ -154,49 +142,64 @@ export class MenuScreen {
   }
 
   private buildEquipment() {
-    // Character selector
+    // ─── Character selector ───────────────────────────────────────────────────
     const allChars: { id: EquipTarget; name: string }[] = [
       { id: 'hero', name: this.save.name },
       ...this.save.party.map(m => ({ id: m.id, name: m.name })),
     ];
+
+    // Validate equipTarget still exists (party member may have been removed)
     if (this.equipTarget !== 'hero' && !this.save.party.find(m => m.id === this.equipTarget)) {
       this.equipTarget = 'hero';
     }
-    const selRow = document.createElement('div');
-    selRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;';
+
+    const selectorRow = document.createElement('div');
+    selectorRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;';
     allChars.forEach(({ id, name }) => {
       const b = document.createElement('button');
       const active = id === this.equipTarget;
       b.textContent = name;
-      b.style.cssText = `padding:5px 10px;font-size:11px;font-family:${FONT};cursor:pointer;pointer-events:auto;
-        background:${active?'rgba(51,68,136,0.9)':'rgba(16,16,30,0.9)'};color:${active?'#FFD700':'#AAAACC'};
-        border:1px solid ${active?'rgba(212,175,55,0.6)':'rgba(51,68,102,0.5)'};border-radius:3px;`;
+      b.style.cssText = `
+        padding:5px 10px;font-size:11px;font-family:${FONT};cursor:pointer;pointer-events:auto;
+        background:${active ? 'rgba(51,68,136,0.9)' : 'rgba(16,16,30,0.9)'};
+        color:${active ? '#FFD700' : '#AAAACC'};
+        border:1px solid ${active ? 'rgba(212,175,55,0.6)' : 'rgba(51,68,102,0.5)'};
+        border-radius:3px;white-space:nowrap;
+      `;
       b.addEventListener('click', () => { this.equipTarget = id; this.render(); });
-      selRow.appendChild(b);
+      selectorRow.appendChild(b);
     });
-    this.content.appendChild(selRow);
+    this.content.appendChild(selectorRow);
 
+    // ─── Determine current equipment and equip/unequip callbacks ─────────────
     const member: PartyMember | null =
-      this.equipTarget === 'hero' ? null : this.save.party.find(m => m.id === this.equipTarget) ?? null;
+      this.equipTarget === 'hero' ? null
+      : this.save.party.find(m => m.id === this.equipTarget) ?? null;
 
-    const getEquip = (k: keyof Equipment) => member ? member.equipment[k] : this.save.equipment[k];
-    const doUnequip = (k: keyof Equipment) => {
-      if (member) memberUnequipSlot(this.save, member, k);
-      else unequipSlot(this.save, k);
-      writeSave(this.save); this.render();
+    const getCurrentEquip = (key: keyof Equipment): string | null =>
+      member ? member.equipment[key] : this.save.equipment[key];
+
+    const doUnequip = (key: keyof Equipment) => {
+      if (member) memberUnequipSlot(this.save, member, key);
+      else unequipSlot(this.save, key);
+      writeSave(this.save);
+      this.render();
     };
+
     const doEquip = (itemId: string) => {
       if (member) memberEquipItem(this.save, member, itemId);
       else equipItem(this.save, itemId);
-      writeSave(this.save); this.render();
+      writeSave(this.save);
+      this.render();
     };
 
+    // ─── Equipment slots ──────────────────────────────────────────────────────
     const slots: {key:keyof Equipment;label:string}[] = [
       {key:'weapon',label:'武器'},{key:'armor',label:'防具'},
       {key:'helmet',label:'兜'},{key:'accessory',label:'アクセ'},
     ];
     slots.forEach(({key,label})=>{
-      const equippedId = getEquip(key);
+      const equippedId = getCurrentEquip(key);
       const item = equippedId ? ITEMS.find(i=>i.id===equippedId) : null;
       const row = document.createElement('div');
       row.style.cssText='display:flex;align-items:center;padding:8px 6px;background:rgba(255,255,255,0.04);border-radius:4px;margin-bottom:6px;';
@@ -206,17 +209,19 @@ export class MenuScreen {
       const nameEl=document.createElement('div');
       nameEl.style.cssText='color:'+(item?'#FFFDE7':'#444466')+';font-size:13px;flex:1;';
       nameEl.textContent=item?item.name:'─ 未装備 ─';
-      row.appendChild(labelEl); row.appendChild(nameEl);
+      row.appendChild(labelEl);
+      row.appendChild(nameEl);
       if(equippedId){
         const unBtn=document.createElement('button');
         unBtn.textContent='外す';
         unBtn.style.cssText='background:none;border:1px solid rgba(255,100,100,0.5);color:#FF8888;font-size:11px;padding:3px 8px;border-radius:3px;cursor:pointer;pointer-events:auto;font-family:'+FONT+';';
-        unBtn.addEventListener('click',()=>doUnequip(key));
+        unBtn.addEventListener('click', () => doUnequip(key));
         row.appendChild(unBtn);
       }
       this.content.appendChild(row);
     });
 
+    // ─── Inventory: equippable items ──────────────────────────────────────────
     const sep=document.createElement('div');
     sep.style.cssText='color:#AAAACC;font-size:11px;text-align:center;margin:10px 0 6px;';
     sep.textContent='─── 所持品から装備 ───';
@@ -236,130 +241,16 @@ export class MenuScreen {
         const item=ITEMS.find(i=>i.id===entry.itemId)!;
         const row=document.createElement('div');
         row.style.cssText='display:flex;align-items:center;padding:7px 6px;background:rgba(255,255,255,0.04);border-radius:4px;margin-bottom:4px;cursor:pointer;pointer-events:auto;';
-        const typeLabel = item.type==='weapon'?'武':item.type==='armor'?'防':item.type==='helmet'?'兜':'アク';
-        row.innerHTML=`<div style="color:#888899;font-size:10px;min-width:22px;font-family:${FONT};">[${typeLabel}]</div><div style="color:#FFFDE7;font-size:13px;flex:1;font-family:${FONT};">${item.name}</div><div style="color:#AAAACC;font-size:10px;font-family:monospace;">×${entry.qty}</div>`;
-        row.addEventListener('click',()=>doEquip(entry.itemId));
+        const typeLabel = item.type === 'weapon' ? '武' : item.type === 'armor' ? '防' : item.type === 'helmet' ? '兜' : 'アク';
+        row.innerHTML=`
+          <div style="color:#888899;font-size:10px;min-width:22px;font-family:${FONT};">[${typeLabel}]</div>
+          <div style="color:#FFFDE7;font-size:13px;flex:1;font-family:${FONT};">${item.name}</div>
+          <div style="color:#AAAACC;font-size:10px;font-family:monospace;">×${entry.qty}</div>
+        `;
+        row.addEventListener('click', () => doEquip(entry.itemId));
         this.content.appendChild(row);
       });
     }
-  }
-
-  private buildJob() {
-    const JOB_COST = 500;
-    const header = document.createElement('div');
-    header.style.cssText = `color:#AAAACC;font-size:11px;margin-bottom:8px;font-family:${FONT};`;
-    header.textContent = `転職するとレベルが1に戻ります。費用: ${JOB_COST} G（現在: ${this.save.gold} G）`;
-    this.content.appendChild(header);
-
-    CLASS_DEFS.forEach(cls => {
-      // Advanced classes behind unlock flag
-      const unlockFlag = (cls as any).unlockFlag as string | undefined;
-      if (unlockFlag && !this.save.flags[unlockFlag]) {
-        const lockedRow = document.createElement('div');
-        lockedRow.style.cssText = `padding:10px;border-radius:6px;margin-bottom:6px;
-          background:rgba(20,20,30,0.5);border:1px solid rgba(40,40,60,0.4);`;
-        lockedRow.innerHTML = `<div style="color:#555566;font-size:14px;font-family:${FONT};">？？？（上級職）</div>
-          <div style="color:#444455;font-size:11px;font-family:${FONT};">解放条件: 魔王討伐クエスト達成</div>`;
-        this.content.appendChild(lockedRow);
-        return;
-      }
-
-      const isCurrent = cls.name === this.save.className;
-      const canAfford = this.save.gold >= JOB_COST;
-      const row = document.createElement('div');
-      row.style.cssText = `padding:10px;border-radius:6px;margin-bottom:6px;
-        background:${isCurrent?'rgba(51,68,136,0.3)':'rgba(255,255,255,0.04)'};
-        border:1px solid ${isCurrent?'rgba(212,175,55,0.4)':'rgba(60,60,80,0.3)'};`;
-
-      const topRow = document.createElement('div');
-      topRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;';
-      const nameEl = document.createElement('div');
-      nameEl.style.cssText = `color:${isCurrent?'#FFD700':'#FFFDE7'};font-size:14px;font-family:${FONT};`;
-      nameEl.textContent = cls.name + (isCurrent?' （現在）':'');
-      topRow.appendChild(nameEl);
-
-      if (!isCurrent) {
-        const btn = document.createElement('button');
-        btn.style.cssText = `padding:4px 10px;font-size:11px;font-family:${FONT};pointer-events:auto;cursor:${canAfford?'pointer':'default'};
-          background:${canAfford?'rgba(60,50,10,0.9)':'rgba(30,30,40,0.6)'};
-          color:${canAfford?'#FFD700':'#555566'};
-          border:1px solid ${canAfford?'rgba(212,175,55,0.5)':'rgba(60,60,80,0.4)'};border-radius:3px;`;
-        btn.textContent = canAfford?'転職する':'G不足';
-        if (canAfford) {
-          btn.addEventListener('click', () => {
-            if (!confirm(`${cls.name}に転職しますか？\nレベルが1に戻り ${JOB_COST} G かかります。`)) return;
-            if (!this.save.jobMastery) this.save.jobMastery = {};
-            this.save.jobMastery[this.save.className] = (this.save.jobMastery[this.save.className] ?? 0) + 1;
-            this.save.gold -= JOB_COST;
-            this.save.className = cls.name as ClassName;
-            this.save.level = 1; this.save.exp = 0;
-            const base = calcStats(cls, 1);
-            this.save.stats = { hp: base.maxHp, maxHp: base.maxHp, mp: base.maxMp, maxMp: base.maxMp, atk: base.atk, def: base.def, mag: base.mag, spd: base.spd };
-            writeSave(this.save); this.render();
-          });
-        }
-        topRow.appendChild(btn);
-      }
-      row.appendChild(topRow);
-
-      const descEl = document.createElement('div');
-      descEl.style.cssText = `color:#888899;font-size:11px;font-family:${FONT};`;
-      descEl.textContent = cls.desc;
-      row.appendChild(descEl);
-      this.content.appendChild(row);
-    });
-
-    const sep = document.createElement('div');
-    sep.style.cssText = 'height:1px;background:rgba(212,175,55,0.15);margin:12px 0;';
-    this.content.appendChild(sep);
-
-    const craftBtn = document.createElement('button');
-    craftBtn.style.cssText = `width:100%;padding:10px;background:rgba(60,40,10,0.8);color:#FFD700;border:1px solid rgba(180,120,30,0.6);border-radius:6px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
-    craftBtn.textContent = '⚒ 武器錬金（ボス素材で武器を作る）';
-    craftBtn.addEventListener('click', () => { this.close(); if (this.onOpenCraft) this.onOpenCraft(); });
-    this.content.appendChild(craftBtn);
-  }
-
-  private buildMaps() {
-    const owned = this.save.ownedMaps ?? [];
-
-    const gachaBtn = document.createElement('button');
-    gachaBtn.style.cssText = `width:100%;padding:10px;background:rgba(40,30,10,0.8);color:#FFD700;border:1px solid rgba(212,175,55,0.5);border-radius:6px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;margin-bottom:12px;`;
-    gachaBtn.textContent = '✨ 宝の地図ガチャを引く';
-    gachaBtn.addEventListener('click', () => { this.close(); if (this.onOpenGacha) this.onOpenGacha(); });
-    this.content.appendChild(gachaBtn);
-
-    if (!owned.length) {
-      const empty = document.createElement('div');
-      empty.style.cssText = `color:#444466;font-size:13px;text-align:center;padding:16px;font-family:${FONT};`;
-      empty.textContent = 'まだ地図を持っていない\nガチャ券は敵がたまに落とす';
-      this.content.appendChild(empty);
-      return;
-    }
-
-    TREASURE_MAPS.filter(m => owned.includes(m.id)).forEach(mapDef => {
-      const prog = (this.save.bossProgress ?? {})[mapDef.id] ?? { count: 0, level: 1 };
-      const nextThresh = BOSS_LEVEL_THRESHOLDS[prog.level + 1] ?? Infinity;
-      const dropRate = Math.round(getBossDropRate(prog.level) * 100);
-
-      const card = document.createElement('div');
-      card.style.cssText = 'padding:10px;border-radius:6px;background:rgba(255,255,255,0.05);border:1px solid rgba(212,175,55,0.3);margin-bottom:8px;';
-      card.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-          <div style="color:#FFFDE7;font-size:14px;font-family:${FONT};">🗺 ${mapDef.name}</div>
-          <div style="color:#FFD700;font-size:13px;">Lv ${prog.level}</div>
-        </div>
-        <div style="color:#888899;font-size:11px;font-family:${FONT};margin-bottom:6px;">
-          撃破数: ${prog.count} / 次Lv: ${nextThresh===Infinity?'MAX':nextThresh} &nbsp;|&nbsp; 素材ドロップ率: ${dropRate}%
-        </div>
-      `;
-      const enterBtn = document.createElement('button');
-      enterBtn.style.cssText = `width:100%;padding:7px;background:rgba(20,40,80,0.8);color:#88CCFF;border:1px solid rgba(68,136,255,0.5);border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
-      enterBtn.textContent = 'ダンジョンに入る';
-      enterBtn.addEventListener('click', () => { this.close(); if (this.onEnterMap) this.onEnterMap(mapDef.mapId); });
-      card.appendChild(enterBtn);
-      this.content.appendChild(card);
-    });
   }
 
   private buildItems() {
@@ -476,12 +367,134 @@ export class MenuScreen {
     }
   }
 
+  private buildJob() {
+    const JOB_COST = 500;
+    const header = document.createElement('div');
+    header.style.cssText = `color:#AAAACC;font-size:11px;margin-bottom:8px;font-family:${FONT};`;
+    header.textContent = `転職するとレベルが1に戻ります。費用: ${JOB_COST} G（現在: ${this.save.gold} G）`;
+    this.content.appendChild(header);
+
+    const currentNote = document.createElement('div');
+    currentNote.style.cssText = `color:#888899;font-size:11px;margin-bottom:10px;font-family:${FONT};`;
+    currentNote.textContent = `現在の職業: ${this.save.className} Lv.${this.save.level}`;
+    this.content.appendChild(currentNote);
+
+    CLASS_DEFS.forEach(cls => {
+      const isCurrent = cls.name === this.save.className;
+      const canAfford = this.save.gold >= JOB_COST;
+      const row = document.createElement('div');
+      row.style.cssText = `padding:10px;border-radius:6px;margin-bottom:6px;
+        background:${isCurrent ? 'rgba(51,68,136,0.3)' : 'rgba(255,255,255,0.04)'};
+        border:1px solid ${isCurrent ? 'rgba(212,175,55,0.4)' : 'rgba(60,60,80,0.3)'};`;
+
+      const topRow = document.createElement('div');
+      topRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;';
+      const nameEl = document.createElement('div');
+      nameEl.style.cssText = `color:${isCurrent ? '#FFD700' : '#FFFDE7'};font-size:14px;font-family:${FONT};`;
+      nameEl.textContent = cls.name + (isCurrent ? ' （現在）' : '');
+      topRow.appendChild(nameEl);
+
+      if (!isCurrent) {
+        const btn = document.createElement('button');
+        btn.style.cssText = `padding:4px 10px;font-size:11px;font-family:${FONT};pointer-events:auto;cursor:${canAfford ? 'pointer' : 'default'};
+          background:${canAfford ? 'rgba(60,50,10,0.9)' : 'rgba(30,30,40,0.6)'};
+          color:${canAfford ? '#FFD700' : '#555566'};
+          border:1px solid ${canAfford ? 'rgba(212,175,55,0.5)' : 'rgba(60,60,80,0.4)'};border-radius:3px;`;
+        btn.textContent = canAfford ? '転職する' : 'G不足';
+        if (canAfford) {
+          btn.addEventListener('click', () => {
+            if (!confirm(`${cls.name}に転職しますか？\nレベルが1に戻り ${JOB_COST} G かかります。`)) return;
+            if (!this.save.jobMastery) this.save.jobMastery = {};
+            this.save.jobMastery[this.save.className] = (this.save.jobMastery[this.save.className] ?? 0) + 1;
+            this.save.gold -= JOB_COST;
+            this.save.className = cls.name as ClassName;
+            this.save.level = 1;
+            this.save.exp = 0;
+            const base = calcStats(cls, 1);
+            this.save.stats = { hp: base.maxHp, maxHp: base.maxHp, mp: base.maxMp, maxMp: base.maxMp, atk: base.atk, def: base.def, mag: base.mag, spd: base.spd };
+            writeSave(this.save);
+            this.render();
+          });
+        }
+        topRow.appendChild(btn);
+      }
+      row.appendChild(topRow);
+
+      const descEl = document.createElement('div');
+      descEl.style.cssText = `color:#888899;font-size:11px;font-family:${FONT};`;
+      descEl.textContent = cls.desc;
+      row.appendChild(descEl);
+      this.content.appendChild(row);
+    });
+
+    // Craft button
+    const sep = document.createElement('div');
+    sep.style.cssText = 'height:1px;background:rgba(212,175,55,0.15);margin:12px 0;';
+    this.content.appendChild(sep);
+
+    const craftBtn = document.createElement('button');
+    craftBtn.style.cssText = `width:100%;padding:10px;background:rgba(60,40,10,0.8);color:#FFD700;border:1px solid rgba(180,120,30,0.6);border-radius:6px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    craftBtn.textContent = '⚒ 武器錬金（ボス素材で武器を作る）';
+    craftBtn.addEventListener('click', () => { this.close(); if (this.onOpenCraft) this.onOpenCraft(); });
+    this.content.appendChild(craftBtn);
+  }
+
+  private buildMaps() {
+    const owned = this.save.ownedMaps ?? [];
+
+    const gachaBtn = document.createElement('button');
+    gachaBtn.style.cssText = `width:100%;padding:10px;background:rgba(40,30,10,0.8);color:#FFD700;border:1px solid rgba(212,175,55,0.5);border-radius:6px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;margin-bottom:12px;`;
+    gachaBtn.textContent = '✨ 宝の地図ガチャを引く';
+    gachaBtn.addEventListener('click', () => { this.close(); if (this.onOpenGacha) this.onOpenGacha(); });
+    this.content.appendChild(gachaBtn);
+
+    if (!owned.length) {
+      const empty = document.createElement('div');
+      empty.style.cssText = `color:#444466;font-size:13px;text-align:center;padding:16px;font-family:${FONT};`;
+      empty.textContent = 'まだ地図を持っていない\nガチャ券は敵がたまに落とす';
+      this.content.appendChild(empty);
+      return;
+    }
+
+    const header = document.createElement('div');
+    header.style.cssText = `color:#AAAACC;font-size:11px;margin-bottom:8px;font-family:${FONT};`;
+    header.textContent = '─── 所持している宝の地図 ───';
+    this.content.appendChild(header);
+
+    TREASURE_MAPS.filter(m => owned.includes(m.id)).forEach(mapDef => {
+      const prog = (this.save.bossProgress ?? {})[mapDef.id] ?? { count: 0, level: 1 };
+      const nextThresh = BOSS_LEVEL_THRESHOLDS[prog.level + 1] ?? Infinity;
+      const dropRate = Math.round(getBossDropRate(prog.level) * 100);
+
+      const card = document.createElement('div');
+      card.style.cssText = 'padding:10px;border-radius:6px;background:rgba(255,255,255,0.05);border:1px solid rgba(212,175,55,0.3);margin-bottom:8px;';
+
+      card.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <div style="color:#FFFDE7;font-size:14px;font-family:${FONT};">🗺 ${mapDef.name}</div>
+          <div style="color:#FFD700;font-size:13px;">Lv ${prog.level}</div>
+        </div>
+        <div style="color:#888899;font-size:11px;font-family:${FONT};margin-bottom:6px;">
+          撃破数: ${prog.count} / 次Lv: ${nextThresh === Infinity ? 'MAX' : nextThresh} &nbsp;|&nbsp; 素材ドロップ率: ${dropRate}%
+        </div>
+      `;
+
+      const enterBtn = document.createElement('button');
+      enterBtn.style.cssText = `width:100%;padding:7px;background:rgba(20,40,80,0.8);color:#88CCFF;border:1px solid rgba(68,136,255,0.5);border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+      enterBtn.textContent = 'ダンジョンに入る';
+      enterBtn.addEventListener('click', () => {
+        this.close();
+        if (this.onEnterMap) this.onEnterMap(mapDef.mapId);
+      });
+      card.appendChild(enterBtn);
+      this.content.appendChild(card);
+    });
+  }
+
   private buildField() {
-    const isStealthActive = this.save.flags['stealth_active'] ?? false;
     const actions = [
-      { id: 'rula',      label: '✨ ルーラ',  desc: '訪れた場所へ瞬時に移動する' },
-      { id: 'releimito', label: '⬆ リレミト', desc: 'ダンジョン・建物から脱出する' },
-      { id: 'stealth',   label: isStealthActive ? '🌑 ステルス（ON）' : '🌑 ステルス（OFF）', desc: 'ON中はランダムエンカウントが発生しない' },
+      { id: 'rula', label: '✨ ルーラ', desc: '訪れた場所へ瞬時に移動する' },
+      { id: 'releimito', label: '⬆ リレミト', desc: 'ダンジョンから脱出する' },
     ];
     actions.forEach(act => {
       const row = document.createElement('div');
@@ -537,48 +550,6 @@ export class MenuScreen {
         row.innerHTML = `<div style="color:#444466;font-size:13px;font-family:${FONT};">？？？？</div>`;
       }
       this.content.appendChild(row);
-    });
-  }
-
-  private buildQuests() {
-    const completed = this.save.completedQuests ?? [];
-    const kills = this.save.questKills ?? {};
-
-    const header = document.createElement('div');
-    header.style.cssText = `color:#AAAACC;font-size:11px;margin-bottom:8px;font-family:${FONT};`;
-    header.textContent = `達成: ${completed.length}/${QUESTS.length} クエスト`;
-    this.content.appendChild(header);
-
-    QUESTS.forEach(quest => {
-      const isDone = completed.includes(quest.id);
-      const card = document.createElement('div');
-      card.style.cssText = `padding:10px;border-radius:6px;margin-bottom:6px;
-        background:${isDone ? 'rgba(40,80,40,0.3)' : 'rgba(255,255,255,0.04)'};
-        border:1px solid ${isDone ? 'rgba(68,200,68,0.4)' : 'rgba(60,60,80,0.3)'};`;
-
-      let progress = '';
-      if (quest.killTarget && quest.killTarget !== 'any' && quest.killCount) {
-        const cur = kills[quest.killTarget] ?? 0;
-        progress = `${Math.min(cur, quest.killCount)}/${quest.killCount}`;
-      } else if (quest.killTarget === 'any' && quest.killCount) {
-        const total = Object.values(kills).reduce((s, n) => s + n, 0);
-        progress = `${Math.min(total, quest.killCount)}/${quest.killCount}`;
-      }
-
-      let reward = '';
-      if (quest.rewardGold) reward += `${quest.rewardGold} G `;
-      if (quest.rewardItems?.length) reward += `アイテム×${quest.rewardItems.length} `;
-      if (quest.rewardFlag) reward += '上級職解放';
-
-      card.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-          <div style="color:${isDone ? '#44FF88' : '#FFFDE7'};font-size:13px;font-family:${FONT};">${isDone ? '✓ ' : ''}${quest.name}</div>
-          ${progress ? `<div style="color:#AAAACC;font-size:11px;font-family:monospace;">${progress}</div>` : ''}
-        </div>
-        <div style="color:#888899;font-size:11px;font-family:${FONT};margin-bottom:2px;">${quest.desc}</div>
-        ${reward ? `<div style="color:#FFD700;font-size:10px;font-family:${FONT};">報酬: ${reward}</div>` : ''}
-      `;
-      this.content.appendChild(card);
     });
   }
 

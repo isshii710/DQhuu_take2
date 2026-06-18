@@ -172,11 +172,11 @@ export interface QuestDef {
   id: string;
   name: string;
   desc: string;
-  killTarget?: string;   // 'any' or specific enemy id
+  killTarget?: string;
   killCount?: number;
   rewardGold?: number;
   rewardItems?: string[];
-  rewardFlag?: string;   // save flag set on completion
+  rewardFlag?: string;
 }
 
 export interface MapDef {

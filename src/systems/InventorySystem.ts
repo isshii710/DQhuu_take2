@@ -105,3 +105,33 @@ export function effectiveStats(save: CharacterSave) {
     spd:   save.stats.spd + b.spd,
   };
 }
+
+export function memberTotalEquipBonus(equipment: Equipment): { atk: number; def: number; mag: number; spd: number; mhp: number; mmp: number } {
+  const bonus = { atk: 0, def: 0, mag: 0, spd: 0, mhp: 0, mmp: 0 };
+  for (const itemId of Object.values(equipment)) {
+    if (!itemId) continue;
+    const item = getItem(itemId);
+    if (!item) continue;
+    bonus.atk += item.atk ?? 0;
+    bonus.def += item.def ?? 0;
+    bonus.mag += item.mag ?? 0;
+    bonus.spd += item.spd ?? 0;
+    bonus.mhp += item.mhp ?? 0;
+    bonus.mmp += item.mmp ?? 0;
+  }
+  return bonus;
+}
+
+export function memberEffectiveStats(member: PartyMember) {
+  const b = memberTotalEquipBonus(member.equipment);
+  return {
+    hp:    member.stats.hp,
+    maxHp: member.stats.maxHp + b.mhp,
+    mp:    member.stats.mp,
+    maxMp: member.stats.maxMp + b.mmp,
+    atk:   member.stats.atk + b.atk,
+    def:   member.stats.def + b.def,
+    mag:   member.stats.mag + b.mag,
+    spd:   member.stats.spd + b.spd,
+  };
+}

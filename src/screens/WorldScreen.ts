@@ -1,6 +1,6 @@
 import type { CharacterSave, MapId, Direction, NpcDef, ItemDef } from '../types';
 import type { PartyMemberDef } from '../data/partyMembers';
-import { TILE_SIZE, WALKABLE, ENCOUNTER_TILES, ENCOUNTER_RATE } from '../config';
+import { TILE_SIZE, WALKABLE, ENCOUNTER_TILES, ENCOUNTER_RATE, T } from '../config';
 import { getMapDef } from '../data/maps';
 import { writeSave } from '../systems/SaveSystem';
 import { randomEncounter, ENEMY_MAP, ENCOUNTER_GROUPS } from '../data/enemies';
@@ -101,8 +101,16 @@ export class WorldScreen {
   private pendingBossBattle = false;
   private pendingBossId: string | null = null;
 
+  private onOpenGacha?: () => void;
+  private onOpenCraft?: () => void;
+  private onEnterMap?: (mapId: MapId) => void;
+
   private minimapCvs: HTMLCanvasElement | null = null;
   private minimapCtx: CanvasRenderingContext2D | null = null;
+
+  // Day/night clock (1 game hour = 20 real seconds; starts at 10:00)
+  private gameHour = 10;
+  private gameClockAccum = 0;
 
   private shopLabels: Array<{ el: HTMLElement; worldX: number; worldZ: number }> = [];
   private exitLabels: Array<{ el: HTMLElement; worldX: number; worldZ: number }> = [];
@@ -110,17 +118,7 @@ export class WorldScreen {
   private mapTransitionCooldown = 0; // ms — prevents re-entering exit immediately after map change
 
   private onBattle!: (opts: BattleOpts) => void;
-  private onMenu!: (
-    save: CharacterSave,
-    onClose: (s: CharacterSave) => void,
-    onFieldAction?: (action: string) => void,
-    onOpenGacha?: () => void,
-    onOpenCraft?: () => void,
-    onEnterMap?: (mapId: MapId) => void
-  ) => void;
-  private onOpenGacha?: () => void;
-  private onOpenCraft?: () => void;
-  private onEnterMap?: (mapId: MapId) => void;
+  private onMenu!: (save: CharacterSave, onClose: (s: CharacterSave)=>void, onFieldAction?: (action: string) => void, onOpenGacha?: ()=>void, onOpenCraft?: ()=>void, onEnterMap?: (mapId: MapId)=>void) => void;
   private stealthMode = false;
   private stealthIndicator: HTMLElement | null = null;
 
@@ -223,19 +221,16 @@ export class WorldScreen {
   activate(
     save: CharacterSave,
     opts: { isMultiplayer: boolean; isHost?: boolean; fromBattle?: boolean },
-    onBattle: (o: BattleOpts) => void,
-    onMenu: (
-      s: CharacterSave,
-      onClose: (s: CharacterSave) => void,
-      onFieldAction?: (action: string) => void,
-      onOpenGacha?: () => void,
-      onOpenCraft?: () => void,
-      onEnterMap?: (mapId: MapId) => void
-    ) => void,
+    onBattle: (o: BattleOpts)=>void,
+    onMenu:   (s: CharacterSave, onClose: (s:CharacterSave)=>void, onFieldAction?: (action: string) => void,
+               onOpenGacha?: ()=>void, onOpenCraft?: ()=>void, onEnterMap?: (mapId: MapId)=>void)=>void,
     onOpenGacha?: () => void,
     onOpenCraft?: () => void,
     onEnterMap?: (mapId: MapId) => void,
   ) {
+    this.onOpenGacha = onOpenGacha;
+    this.onOpenCraft = onOpenCraft;
+    this.onEnterMap  = onEnterMap;
     this.save = save;
     this.mapId = save.position.mapId;
     this.isMultiplayer = opts.isMultiplayer;
@@ -256,6 +251,7 @@ export class WorldScreen {
     // Load map and spawn player
     const mapDef = getMapDef(this.mapId);
     this.renderer.loadMap(mapDef); // clears field enemy sprites via clearFieldEnemies()
+    this.renderer.setTimeOfDay(this.gameHour + this.gameClockAccum / 20000);
     this.playerSprite = this.renderer.spawnPlayer(ci, save.position.tileX, save.position.tileY);
 
     // Field enemies
@@ -269,7 +265,7 @@ export class WorldScreen {
       }
     } else {
       this.fieldEnemies = [];
-      if (mapDef.encounterGroup && !isDungeon(this.mapId)) this.spawnFieldEnemies();
+      if (mapDef.encounterGroup) this.spawnFieldEnemies();
     }
     this.preBattleMapId = null;
 
@@ -323,6 +319,15 @@ export class WorldScreen {
 
   private update(delta: number) {
     if (this.mapTransitionCooldown > 0) this.mapTransitionCooldown = Math.max(0, this.mapTransitionCooldown - delta);
+
+    // Advance game clock: 20 real seconds = 1 game hour
+    this.gameClockAccum += delta;
+    if (this.gameClockAccum >= 20000) {
+      this.gameClockAccum -= 20000;
+      this.gameHour = (this.gameHour + 1) % 24;
+    }
+    this.renderer.setTimeOfDay(this.gameHour + this.gameClockAccum / 20000);
+    this.renderer.setPlayerLight(this.save.equipment.accessory === 'lantern');
 
     // Per-enemy individual movement timers + smooth visual interpolation
     let anyMoved = false;
@@ -464,12 +469,10 @@ export class WorldScreen {
         this.showDockDialog();
       } else if (npc.shopType) {
         this.showShopDialog(npc);
-      } else if (npc.id === 'boss_grosur') {
-        this.showDialogue(npc.name, npc.dialogue);
-        this.pendingBossBattle = true;
       } else if (npc.bossId) {
         this.showDialogue(npc.name, npc.dialogue);
         this.pendingBossId = npc.bossId;
+        if (npc.id === 'boss_grosur') this.pendingBossBattle = true;
       } else if (npc.recruitId) {
         this.handleRecruitNpc(npc);
       } else {
@@ -600,13 +603,17 @@ export class WorldScreen {
     const npcSet = new Set(mapDef.npcs.map(n => `${n.tileX},${n.tileY}`));
     const px = this.save.position.tileX;
     const py = this.save.position.tileY;
+    const isDungeon = this.mapId === 'dungeon' || this.mapId === 'dungeon2' || this.mapId === 'dungeon3';
+    // Dungeons use FLOOR tiles; outdoor uses standard encounter tiles
+    const spawnTiles = isDungeon ? new Set([T.FLOOR]) : ENCOUNTER_TILES;
+    const safeZone = isDungeon ? 4 : 6;
 
     const candidates: {x: number; y: number}[] = [];
     for (let ty = 0; ty < rows; ty++) {
       for (let tx = 0; tx < cols; tx++) {
-        if (!ENCOUNTER_TILES.has(tiles[ty][tx])) continue;
+        if (!spawnTiles.has(tiles[ty][tx])) continue;
         if (npcSet.has(`${tx},${ty}`)) continue;
-        if (Math.abs(tx - px) < 6 && Math.abs(ty - py) < 6) continue;
+        if (Math.abs(tx - px) < safeZone && Math.abs(ty - py) < safeZone) continue;
         candidates.push({x: tx, y: ty});
       }
     }
@@ -614,7 +621,9 @@ export class WorldScreen {
 
     const group = mapDef.encounterGroup ?? 'world_field';
     const groups = ENCOUNTER_GROUPS[group] ?? ENCOUNTER_GROUPS['world_field'];
-    const count = Math.min(8, Math.max(5, Math.floor(candidates.length * 0.02)));
+    const count = isDungeon
+      ? Math.min(6, Math.max(3, Math.floor(candidates.length * 0.05)))
+      : Math.min(8, Math.max(5, Math.floor(candidates.length * 0.02)));
 
     for (let i = 0; i < Math.min(count, candidates.length); i++) {
       const pos = candidates[i];
@@ -1032,7 +1041,7 @@ export class WorldScreen {
     const SHOP_STOCK: Record<string, string[]> = {
       weapon: ['wood_sword','iron_sword','silver_sword','staff','crystal_staff','dagger','shadow_blade'],
       armor:  ['cloth','leather','chain_mail','plate_mail','robe','cloth_hat','leather_hat','iron_helm','leather_ring','silver_ring','guard_bracelet','speed_boots'],
-      item:   ['herb','potion','elixir','mana_herb','ether','antidote'],
+      item:   ['herb','potion','elixir','mana_herb','ether','antidote','lantern'],
     };
     const stockIds = SHOP_STOCK[npc.shopType!] ?? [];
     const stockItems = stockIds.map(id => ITEM_MAP[id]).filter(Boolean) as ItemDef[];
