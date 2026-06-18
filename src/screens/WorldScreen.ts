@@ -5,6 +5,8 @@ import { getMapDef } from '../data/maps';
 import { writeSave } from '../systems/SaveSystem';
 import { randomEncounter, ENEMY_MAP, ENCOUNTER_GROUPS } from '../data/enemies';
 import { ITEM_MAP } from '../data/items';
+import { hasItem, removeItem } from '../systems/InventorySystem';
+import { TREASURE_MAPS } from '../data/treasureMaps';
 import { getEnemyTexture } from '../engine/TextureCache';
 import { mpManager } from '../systems/MultiplayerManager';
 import type { NetPlayer, EnemyDef } from '../types';
@@ -240,9 +242,10 @@ export class WorldScreen {
     this.isHost = opts.isHost ?? false;
     this.onBattle = onBattle;
     this.onMenu   = onMenu;
-    this.onOpenGacha = onOpenGacha;
+    // Always use internal implementations for gacha and map entry
+    this.onOpenGacha = () => this.showGachaDialog();
+    this.onEnterMap  = (mapId: MapId) => this.enterTreasureMap(mapId);
     this.onOpenCraft = onOpenCraft;
-    this.onEnterMap = onEnterMap;
     this.moving = false;
     this.dialogOpen = false;
     this.dialogEl.style.display = 'none';
@@ -1694,6 +1697,103 @@ export class WorldScreen {
   }
 
   // ─── ルーラ (ワープ) ─────────────────────────────────────────────────────
+
+  // ─── 宝の地図ガチャ ──────────────────────────────────────────────────────────
+
+  private showGachaDialog() {
+    if (this.dialogOpen) return;
+    this.dialogOpen = true;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,0.88);z-index:30;display:flex;align-items:center;justify-content:center;pointer-events:auto;';
+
+    const box = document.createElement('div');
+    box.style.cssText = `background:rgba(10,5,30,0.97);border:2px solid rgba(212,175,55,0.8);border-radius:8px;padding:24px 20px;max-width:320px;width:90%;text-align:center;font-family:${FONT};`;
+
+    const close = () => { overlay.remove(); this.dialogOpen = false; };
+
+    const rebuild = () => {
+      box.innerHTML = '';
+      const title = document.createElement('div');
+      title.style.cssText = 'color:#FFD700;font-size:16px;font-weight:bold;margin-bottom:14px;';
+      title.textContent = '✨ 宝の地図ガチャ';
+      box.appendChild(title);
+
+      if (!hasItem(this.save, 'gacha_ticket')) {
+        const msg = document.createElement('div');
+        msg.style.cssText = 'color:#FFFDE7;font-size:13px;line-height:1.6;margin-bottom:18px;';
+        msg.textContent = 'ガチャ券がありません。\n敵を倒して入手しましょう！';
+        box.appendChild(msg);
+        const btn = document.createElement('button');
+        btn.textContent = '閉じる';
+        btn.style.cssText = `padding:8px 28px;background:rgba(60,50,20,0.9);color:#FFD700;border:1px solid rgba(212,175,55,0.5);border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+        btn.addEventListener('click', close);
+        box.appendChild(btn);
+        return;
+      }
+
+      const qty = this.save.inventory.find(e => e.itemId === 'gacha_ticket')?.qty ?? 0;
+      const owned = this.save.ownedMaps ?? [];
+      const unowned = TREASURE_MAPS.filter(m => !owned.includes(m.id));
+
+      const info = document.createElement('div');
+      info.style.cssText = 'color:#FFFDE7;font-size:13px;margin-bottom:4px;';
+      info.textContent = `ガチャ券: ${qty}枚`;
+      box.appendChild(info);
+
+      const sub = document.createElement('div');
+      sub.style.cssText = 'color:#88AAFF;font-size:11px;margin-bottom:18px;';
+      sub.textContent = unowned.length > 0
+        ? `未入手の地図: ${unowned.length}/${TREASURE_MAPS.length}種`
+        : '全ての地図を入手済み！引いても重複します';
+      box.appendChild(sub);
+
+      const pullBtn = document.createElement('button');
+      pullBtn.textContent = '🎲 ガチャを引く！（券1枚）';
+      pullBtn.style.cssText = `display:block;width:100%;padding:12px;background:rgba(100,70,0,0.9);color:#FFD700;border:1px solid rgba(212,175,55,0.8);border-radius:6px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;margin-bottom:8px;`;
+      pullBtn.addEventListener('click', () => {
+        removeItem(this.save, 'gacha_ticket', 1);
+        const pool = unowned.length > 0 ? unowned : TREASURE_MAPS;
+        const won = pool[Math.floor(Math.random() * pool.length)];
+        if (!this.save.ownedMaps) this.save.ownedMaps = [];
+        const isNew = !this.save.ownedMaps.includes(won.id);
+        if (isNew) this.save.ownedMaps.push(won.id);
+        writeSave(this.save);
+
+        box.innerHTML = '';
+        const rt = document.createElement('div');
+        rt.style.cssText = 'color:#FFD700;font-size:15px;font-weight:bold;margin-bottom:14px;';
+        rt.textContent = isNew ? '🗺 新しい地図を入手！' : '✨ すでに持っている地図';
+        const rn = document.createElement('div');
+        rn.style.cssText = 'color:#FFFDE7;font-size:20px;font-weight:bold;margin-bottom:8px;';
+        rn.textContent = won.name;
+        const rs = document.createElement('div');
+        rs.style.cssText = `color:${isNew ? '#88FF88' : '#FF8888'};font-size:12px;margin-bottom:20px;`;
+        rs.textContent = isNew ? 'メニューの「宝の地図」から入れます！' : 'この地図はすでに持っています';
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '閉じる';
+        closeBtn.style.cssText = `padding:8px 28px;background:rgba(60,50,20,0.9);color:#FFD700;border:1px solid rgba(212,175,55,0.5);border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+        closeBtn.addEventListener('click', close);
+        box.appendChild(rt); box.appendChild(rn); box.appendChild(rs); box.appendChild(closeBtn);
+      });
+
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'キャンセル';
+      cancelBtn.style.cssText = `display:block;width:100%;padding:8px;background:transparent;color:#888899;border:1px solid rgba(100,100,150,0.3);border-radius:4px;font-size:12px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+      cancelBtn.addEventListener('click', close);
+
+      box.appendChild(pullBtn);
+      box.appendChild(cancelBtn);
+    };
+
+    rebuild();
+    overlay.appendChild(box);
+    this.uiRoot.appendChild(overlay);
+  }
+
+  private enterTreasureMap(mapId: MapId) {
+    this.changeMap(mapId, 9, 12);
+  }
 
   showRulaDialog() {
     if (this.dialogOpen) return;

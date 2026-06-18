@@ -29,7 +29,8 @@ export class SceneManager {
       save,
       opts,
       battleOpts => this.startBattle(battleOpts),
-      (s, onClose, onFieldAction) => this.menuScreen.open(s, onClose, onFieldAction),
+      (s, onClose, onFieldAction, onOpenGacha, onOpenCraft, onEnterMap) =>
+        this.menuScreen.open(s, onClose, onFieldAction, onOpenGacha, onOpenCraft, onEnterMap),
     );
   }
 

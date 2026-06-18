@@ -565,6 +565,159 @@ export const MAP_DEFS: MapDef[] = [
       { tileX: 10, tileY: 13, targetMap: 'sea_temple', targetX: 10, targetY: 3  },
     ],
   },
+  // ─── Treasure Map Dungeons (tmap_1 – tmap_5) ────────────────────────────────
+  // Each is 20 × 16. Boss NPC at (9,1). Exit door at (9,14)+(10,14) → world.
+  // Player enters via MenuScreen "ダンジョンに入る" button, spawned at (9,12).
+
+  {
+    id: 'tmap_1', name: '古の洞窟', bgColor: 0x1A1208, encounterGroup: 'tmap_1',
+    tiles: [
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Fl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Dr,Dr,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+    ],
+    npcs: [
+      { id:'tmap_boss_npc_1', name:'遺跡のゴーレム王', dialogue:['「...侵入者め...」','ゴーレム王が行く手を阻む！'], tileX:9, tileY:1, spriteColor:0x8B7355, bossId:'tmap_boss_1' },
+      { id:'tmap_chest_1', name:'宝箱', dialogue:[], tileX:4, tileY:3, spriteColor:0xFFD700, isChest:true, chestPool:['potion','iron_sword','leather_armor','gacha_ticket'] },
+    ],
+    exits: [
+      { tileX:9, tileY:14, targetMap:'world', targetX:19, targetY:18 },
+      { tileX:10,tileY:14, targetMap:'world', targetX:19, targetY:18 },
+    ],
+  },
+
+  {
+    id: 'tmap_2', name: '幻の遺跡', bgColor: 0x100A18, encounterGroup: 'tmap_2',
+    tiles: [
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl],
+      [Wl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Wl,Fl,Wl,Wl],
+      [Wl,Wl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Wl,Wl],
+      [Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Dr,Dr,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+    ],
+    npcs: [
+      { id:'tmap_boss_npc_2', name:'氷の幻獣フェニルス', dialogue:['「幻影の中で永遠に彷徨え！」','フェニルスが姿を現した！'], tileX:9, tileY:1, spriteColor:0x88BBFF, bossId:'tmap_boss_2' },
+      { id:'tmap_chest_2', name:'宝箱', dialogue:[], tileX:4, tileY:4, spriteColor:0xFFD700, isChest:true, chestPool:['ether','steel_sword','chain_mail','gacha_ticket'] },
+    ],
+    exits: [
+      { tileX:9, tileY:14, targetMap:'world', targetX:19, targetY:18 },
+      { tileX:10,tileY:14, targetMap:'world', targetX:19, targetY:18 },
+    ],
+  },
+
+  {
+    id: 'tmap_3', name: '魔界の迷宮', bgColor: 0x180808, encounterGroup: 'tmap_3',
+    tiles: [
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+      [Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Wl],
+      [Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl],
+      [Wl,Fl,Wl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Wl,Wl,Fl,Wl],
+      [Wl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Wl],
+      [Wl,Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Wl,Wl,Fl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Wl,Wl,Fl,Wl,Wl,Wl,Wl],
+      [Wl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Wl],
+      [Wl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Wl],
+      [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Dr,Dr,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+    ],
+    npcs: [
+      { id:'tmap_boss_npc_3', name:'炎の魔獣フラガラッハ', dialogue:['「灼熱の炎で焼き尽くしてくれる！」','フラガラッハが降臨した！'], tileX:9, tileY:1, spriteColor:0xFF4400, bossId:'tmap_boss_3' },
+      { id:'tmap_chest_3', name:'宝箱', dialogue:[], tileX:5, tileY:11, spriteColor:0xFFD700, isChest:true, chestPool:['elixir','flame_sword','holy_armor','gacha_ticket'] },
+    ],
+    exits: [
+      { tileX:9, tileY:14, targetMap:'world', targetX:19, targetY:18 },
+      { tileX:10,tileY:14, targetMap:'world', targetX:19, targetY:18 },
+    ],
+  },
+
+  {
+    id: 'tmap_4', name: '天空の試練', bgColor: 0x080C20, encounterGroup: 'tmap_4',
+    tiles: [
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Wl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Fl,Wl,Wl,Fl,Fl,Wl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Dr,Dr,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+    ],
+    npcs: [
+      { id:'tmap_boss_npc_4', name:'深海の怪物クラーケン', dialogue:['「深淵より来たる者、汝を試さん！」','クラーケンが触手を広げた！'], tileX:9, tileY:1, spriteColor:0x0055AA, bossId:'tmap_boss_4' },
+      { id:'tmap_chest_4', name:'宝箱', dialogue:[], tileX:5, tileY:5, spriteColor:0xFFD700, isChest:true, chestPool:['elixir','sky_spear','holy_armor','gacha_ticket'] },
+    ],
+    exits: [
+      { tileX:9, tileY:14, targetMap:'world', targetX:19, targetY:18 },
+      { tileX:10,tileY:14, targetMap:'world', targetX:19, targetY:18 },
+    ],
+  },
+
+  {
+    id: 'tmap_5', name: '海底の神殿', bgColor: 0x04080E, encounterGroup: 'tmap_5',
+    tiles: [
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl],
+      [Wl,Wl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Wl,Wl],
+      [Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Wl,Wl],
+      [Wl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl],
+      [Wl,Wl,Fl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Wl,Wl],
+      [Wl,Wl,Fl,Wl,Fl,Wl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Wl,Wl,Wl,Fl,Wl,Wl],
+      [Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Wl,Wl],
+      [Wl,Wl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Wl,Wl],
+      [Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Fl,Fl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Dr,Dr,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+      [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+    ],
+    npcs: [
+      { id:'tmap_boss_npc_5', name:'天空の魔龍セラフィア', dialogue:['「翼持つ者よ、天の試練を受けよ！」','セラフィアが舞い降りた！'], tileX:9, tileY:1, spriteColor:0xDDAAFF, bossId:'tmap_boss_5' },
+      { id:'tmap_chest_5', name:'宝箱', dialogue:[], tileX:4, tileY:3, spriteColor:0xFFD700, isChest:true, chestPool:['elixir','dragon_shield','holy_helm','gacha_ticket'] },
+    ],
+    exits: [
+      { tileX:9, tileY:14, targetMap:'world', targetX:19, targetY:18 },
+      { tileX:10,tileY:14, targetMap:'world', targetX:19, targetY:18 },
+    ],
+  },
 ];
 
 export const MAP_DEF_MAP: Record<string, MapDef> = Object.fromEntries(MAP_DEFS.map(m => [m.id, m]));

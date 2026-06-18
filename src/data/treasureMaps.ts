@@ -8,11 +8,11 @@ export interface TreasureMapDef {
 }
 
 export const TREASURE_MAPS: TreasureMapDef[] = [
-  { id: 'tmap_1', name: '古の洞窟', mapId: 'tmap_1', bossId: 'grosur' },
-  { id: 'tmap_2', name: '幻の遺跡', mapId: 'tmap_2', bossId: 'shadowknight' },
-  { id: 'tmap_3', name: '魔界の迷宮', mapId: 'tmap_3', bossId: 'demon_boss' },
-  { id: 'tmap_4', name: '天空の試練', mapId: 'tmap_4', bossId: 'grosur' },
-  { id: 'tmap_5', name: '海底の神殿', mapId: 'tmap_5', bossId: 'demon_boss' },
+  { id: 'tmap_1', name: '古の洞窟',  mapId: 'tmap_1', bossId: 'tmap_boss_1' },
+  { id: 'tmap_2', name: '幻の遺跡',  mapId: 'tmap_2', bossId: 'tmap_boss_2' },
+  { id: 'tmap_3', name: '魔界の迷宮',mapId: 'tmap_3', bossId: 'tmap_boss_3' },
+  { id: 'tmap_4', name: '天空の試練',mapId: 'tmap_4', bossId: 'tmap_boss_4' },
+  { id: 'tmap_5', name: '海底の神殿',mapId: 'tmap_5', bossId: 'tmap_boss_5' },
 ];
 
 export const BOSS_LEVEL_THRESHOLDS: Record<number, number> = {
