@@ -125,7 +125,14 @@ export class TitleScreen {
   private buildMain() {
     const wrap = el('div','display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:30px;');
 
-    wrap.appendChild(btn('はじめから', () => { this.screen='class_select'; this.renderScreen(); }));
+    wrap.appendChild(btn('はじめから', () => {
+      if (hasSave()) {
+        this.showNewGameConfirm();
+      } else {
+        this.screen = 'class_select';
+        this.renderScreen();
+      }
+    }));
     const contBtn = btn('つづきから', () => this.continueGame(), hasSave() ? '' : 'opacity:0.4;cursor:default;pointer-events:none;');
     wrap.appendChild(contBtn);
     wrap.appendChild(btn('仲間の世界へ行く', () => { this.screen='mp_join'; this.renderScreen(); }));
@@ -346,6 +353,54 @@ export class TitleScreen {
     const backB = btn('← 戻る', () => { input.remove(); this.screen='multiplayer'; this.renderScreen(); }, 'width:120px;font-size:14px;margin-top:8px;');
     this.content.appendChild(joinB);
     this.content.appendChild(backB);
+  }
+
+  private showNewGameConfirm() {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+      background:rgba(0,0,0,0.75);pointer-events:auto;z-index:50;
+    `;
+
+    const box = document.createElement('div');
+    box.style.cssText = `
+      background:rgba(10,10,30,0.97);border:2px solid rgba(212,175,55,0.7);
+      border-radius:8px;padding:22px 24px;width:280px;text-align:center;
+      font-family:${FONT};
+    `;
+
+    const msg = document.createElement('div');
+    msg.style.cssText = 'color:#FFFDE7;font-size:14px;margin-bottom:8px;line-height:1.6;';
+    msg.textContent = 'セーブデータが存在します。';
+
+    const warn = document.createElement('div');
+    warn.style.cssText = 'color:#FF8888;font-size:12px;margin-bottom:20px;';
+    warn.textContent = 'はじめからにすると現在のデータは消えます。\nよろしいですか？';
+
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'display:flex;gap:12px;justify-content:center;';
+
+    const yesBtn = document.createElement('button');
+    yesBtn.style.cssText = `padding:10px 20px;background:rgba(80,20,20,0.9);color:#FF8888;border:1px solid rgba(255,80,80,0.6);border-radius:4px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    yesBtn.textContent = 'はい';
+    yesBtn.addEventListener('click', () => {
+      overlay.remove();
+      this.screen = 'class_select';
+      this.renderScreen();
+    });
+
+    const noBtn = document.createElement('button');
+    noBtn.style.cssText = `padding:10px 20px;background:rgba(16,26,56,0.9);color:#FFFDE7;border:1px solid rgba(212,175,55,0.5);border-radius:4px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    noBtn.textContent = 'いいえ';
+    noBtn.addEventListener('click', () => overlay.remove());
+
+    btnRow.appendChild(yesBtn);
+    btnRow.appendChild(noBtn);
+    box.appendChild(msg);
+    box.appendChild(warn);
+    box.appendChild(btnRow);
+    overlay.appendChild(box);
+    this.root.appendChild(overlay);
   }
 
   private continueGame() {

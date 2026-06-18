@@ -776,6 +776,7 @@ export class BattleScreen {
             pointer-events:none;z-index:15;
             transition:all 0.15s linear;
           `);
+          const rootRect = this.root.getBoundingClientRect();
           const px = rootRect.width/2 - 7;
           const py = rootRect.height - 130 - 26;
           orb.style.left = px + 'px';

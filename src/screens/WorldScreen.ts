@@ -29,18 +29,27 @@ interface FieldEnemy {
 }
 
 const MAP_FLAGS: Partial<Record<MapId, string>> = {
-  village: 'village_visited',
-  world: 'world_visited',
-  castle: 'castle_visited',
-  dungeon: 'dungeon_entered',
-  dungeon2: 'dungeon2_entered',
-  dungeon3: 'dungeon3_entered',
+  village:      'village_visited',
+  world:        'world_visited',
+  castle:       'castle_visited',
+  dungeon:      'dungeon_entered',
+  dungeon2:     'dungeon2_entered',
+  dungeon3:     'dungeon3_entered',
+  house1:       'house1_visited',
+  house2:       'house2_visited',
+  house3:       'house3_visited',
+  ruins:        'ruins_visited',
+  ice_cave:     'ice_cave_visited',
+  lava_cave:    'lava_cave_visited',
+  sea_temple:   'sea_temple_visited',
+  sky_castle:   'sky_castle_visited',
+  demon_castle: 'demon_castle_visited',
 };
 
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
 const MOVE_DURATION = 250; // ms per tile move
 
-export interface BattleOpts { save: CharacterSave; enemies: EnemyDef[]; isMultiplayer: boolean; isHost: boolean; returnMap: MapId; onDefeat?: () => void; }
+export interface BattleOpts { save: CharacterSave; enemies: EnemyDef[]; isMultiplayer: boolean; isHost: boolean; returnMap: MapId; onDefeat?: () => void; bossId?: string; }
 
 export class WorldScreen {
   private uiRoot: HTMLElement;
@@ -88,6 +97,7 @@ export class WorldScreen {
 
   private pendingClassPick: { def: PartyMemberDef } | null = null;
   private pendingBossBattle = false;
+  private pendingBossId: string | null = null;
 
   private minimapCvs: HTMLCanvasElement | null = null;
   private minimapCtx: CanvasRenderingContext2D | null = null;
@@ -98,7 +108,19 @@ export class WorldScreen {
   private mapTransitionCooldown = 0; // ms — prevents re-entering exit immediately after map change
 
   private onBattle!: (opts: BattleOpts) => void;
-  private onMenu!:   (save: CharacterSave, onClose: (s: CharacterSave)=>void, onFieldAction?: (action: string) => void) => void;
+  private onMenu!: (
+    save: CharacterSave,
+    onClose: (s: CharacterSave) => void,
+    onFieldAction?: (action: string) => void,
+    onOpenGacha?: () => void,
+    onOpenCraft?: () => void,
+    onEnterMap?: (mapId: MapId) => void
+  ) => void;
+  private onOpenGacha?: () => void;
+  private onOpenCraft?: () => void;
+  private onEnterMap?: (mapId: MapId) => void;
+  private stealthMode = false;
+  private stealthIndicator: HTMLElement | null = null;
 
   private active = false;
   private lastTime = 0;
@@ -199,8 +221,18 @@ export class WorldScreen {
   activate(
     save: CharacterSave,
     opts: { isMultiplayer: boolean; isHost?: boolean; fromBattle?: boolean },
-    onBattle: (o: BattleOpts)=>void,
-    onMenu:   (s: CharacterSave, onClose: (s:CharacterSave)=>void, onFieldAction?: (action: string) => void)=>void
+    onBattle: (o: BattleOpts) => void,
+    onMenu: (
+      s: CharacterSave,
+      onClose: (s: CharacterSave) => void,
+      onFieldAction?: (action: string) => void,
+      onOpenGacha?: () => void,
+      onOpenCraft?: () => void,
+      onEnterMap?: (mapId: MapId) => void
+    ) => void,
+    onOpenGacha?: () => void,
+    onOpenCraft?: () => void,
+    onEnterMap?: (mapId: MapId) => void,
   ) {
     this.save = save;
     this.mapId = save.position.mapId;
@@ -208,6 +240,9 @@ export class WorldScreen {
     this.isHost = opts.isHost ?? false;
     this.onBattle = onBattle;
     this.onMenu   = onMenu;
+    this.onOpenGacha = onOpenGacha;
+    this.onOpenCraft = onOpenCraft;
+    this.onEnterMap = onEnterMap;
     this.moving = false;
     this.dialogOpen = false;
     this.dialogEl.style.display = 'none';
@@ -425,6 +460,9 @@ export class WorldScreen {
       } else if (npc.id === 'boss_grosur') {
         this.showDialogue(npc.name, npc.dialogue);
         this.pendingBossBattle = true;
+      } else if (npc.bossId) {
+        this.showDialogue(npc.name, npc.dialogue);
+        this.pendingBossId = npc.bossId;
       } else if (npc.recruitId) {
         this.handleRecruitNpc(npc);
       } else {
@@ -458,7 +496,7 @@ export class WorldScreen {
       }
       // Random encounters in dungeons (floor tiles don't match ENCOUNTER_TILES, so check inline)
       const inDungeon = this.mapId === 'dungeon' || this.mapId === 'dungeon2' || this.mapId === 'dungeon3';
-      if (inDungeon) {
+      if (inDungeon && !this.stealthMode) {
         this.stepsSinceEncounter++;
         if (this.stepsSinceEncounter >= 5 && Math.random() < ENCOUNTER_RATE) {
           this.stepsSinceEncounter = 0;
@@ -516,6 +554,7 @@ export class WorldScreen {
   // ─── Encounter ─────────────────────────────────────────────────────────────
 
   private checkEncounter(tileId: number) {
+    if (this.stealthMode) { this.stepsSinceEncounter = 0; return; }
     if (!ENCOUNTER_TILES.has(tileId)) { this.stepsSinceEncounter = 0; return; }
     this.stepsSinceEncounter++;
     if (this.stepsSinceEncounter < 5) return;
@@ -525,7 +564,7 @@ export class WorldScreen {
     }
   }
 
-  private triggerBattle(enemies?: EnemyDef[]) {
+  private triggerBattle(enemies?: EnemyDef[], bossId?: string) {
     this.preBattleMapId = this.mapId;
     const mapDef = getMapDef(this.mapId);
     const battleEnemies = enemies ?? randomEncounter(mapDef.encounterGroup ?? 'world_field');
@@ -537,7 +576,7 @@ export class WorldScreen {
     requestAnimationFrame(() => { flash.style.opacity = '1'; });
 
     setTimeout(() => {
-      this.onBattle({ save: this.save, enemies: battleEnemies, isMultiplayer: this.isMultiplayer, isHost: this.isHost, returnMap: this.mapId, onDefeat: () => this.handleDefeat() });
+      this.onBattle({ save: this.save, enemies: battleEnemies, isMultiplayer: this.isMultiplayer, isHost: this.isHost, returnMap: this.mapId, onDefeat: () => this.handleDefeat(), bossId });
       flash.style.transition = 'opacity 0.22s ease-out';
       flash.style.opacity = '0';
       setTimeout(() => flash.remove(), 280);
@@ -759,8 +798,19 @@ export class WorldScreen {
       this.dialogOpen = false;
       if (this.pendingBossBattle) {
         this.pendingBossBattle = false;
+        this.pendingBossId = null;
         const boss = { ...ENEMY_MAP['grosur'] };
         this.triggerBattle([boss]);
+      } else if (this.pendingBossId) {
+        const bossId = this.pendingBossId;
+        this.pendingBossId = null;
+        const bossEnemy = ENEMY_MAP[bossId];
+        if (bossEnemy) {
+          const prog = (this.save.bossProgress ?? {})[bossId] ?? { count: 0, level: 1 };
+          const scale = 1 + (prog.level - 1) * 0.3;
+          const scaled = { ...bossEnemy, hp: Math.round(bossEnemy.hp * scale), atk: Math.round(bossEnemy.atk * scale) };
+          this.triggerBattle([scaled], bossId);
+        }
       } else if (this.pendingClassPick) {
         const pick = this.pendingClassPick;
         this.pendingClassPick = null;
@@ -904,13 +954,52 @@ export class WorldScreen {
 
   private openMenu() {
     if (this.dialogOpen) return;
-    this.onMenu(this.save, (s) => {
-      this.save = s;
-      this.hudEl.update(s, getMapDef(this.mapId).name);
-    }, (action: string) => {
-      if (action === 'rula') this.showRulaDialog();
-      else if (action === 'releimito') this.showReleimitoDialog();
-    });
+    this.onMenu(
+      this.save,
+      (s) => { this.save = s; this.hudEl.update(s, getMapDef(this.mapId).name); },
+      (action: string) => {
+        if (action === 'rula') this.showRulaDialog();
+        else if (action === 'releimito') this.showReleimitoDialog();
+        else if (action === 'stealth') this.toggleStealth();
+      },
+      this.onOpenGacha,
+      this.onOpenCraft,
+      this.onEnterMap,
+    );
+  }
+
+  private toggleStealth() {
+    this.stealthMode = !this.stealthMode;
+    this.save.flags['stealth_active'] = this.stealthMode;
+    writeSave(this.save);
+    this.updateStealthIndicator();
+    this.showDialogue(
+      'ステルス',
+      this.stealthMode
+        ? ['ステルスモードON！', 'ランダムエンカウントが抑制される。']
+        : ['ステルスモードOFF。', '通常のエンカウント率に戻った。'],
+    );
+  }
+
+  private updateStealthIndicator() {
+    if (this.stealthMode) {
+      if (!this.stealthIndicator) {
+        const el = document.createElement('div');
+        el.style.cssText = `
+          position:absolute;top:8px;left:50%;transform:translateX(-50%);
+          background:rgba(30,10,60,0.85);border:1px solid rgba(180,80,255,0.7);
+          border-radius:20px;padding:4px 12px;
+          color:#CC88FF;font-size:11px;pointer-events:none;z-index:10;
+          font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;
+        `;
+        el.textContent = '🌑 ステルス中';
+        this.uiRoot.appendChild(el);
+        this.stealthIndicator = el;
+      }
+    } else {
+      this.stealthIndicator?.remove();
+      this.stealthIndicator = null;
+    }
   }
 
   // ─── ショップダイアログ ──────────────────────────────────────────────────────
@@ -1504,8 +1593,15 @@ export class WorldScreen {
     this.dialogOpen = true;
 
     const destinations = [
-      { mapId: 'village' as MapId, name: 'ハジメ村', flag: 'village_visited', x: 9, y: 11 },
-      { mapId: 'castle' as MapId, name: 'アルデア城', flag: 'castle_visited', x: 9, y: 11 },
+      { mapId: 'village'     as MapId, name: 'ハジメ村',     flag: 'village_visited',     x: 9,  y: 11 },
+      { mapId: 'castle'      as MapId, name: 'アルデア城',   flag: 'castle_visited',      x: 9,  y: 11 },
+      { mapId: 'dungeon'     as MapId, name: '地下ダンジョン', flag: 'dungeon_entered',   x: 3,  y: 3  },
+      { mapId: 'ruins'       as MapId, name: '古代遺跡',     flag: 'ruins_visited',       x: 5,  y: 5  },
+      { mapId: 'ice_cave'    as MapId, name: '氷の洞窟',     flag: 'ice_cave_visited',    x: 5,  y: 5  },
+      { mapId: 'lava_cave'   as MapId, name: '溶岩洞窟',     flag: 'lava_cave_visited',   x: 5,  y: 5  },
+      { mapId: 'sea_temple'  as MapId, name: '海底神殿',     flag: 'sea_temple_visited',  x: 5,  y: 5  },
+      { mapId: 'sky_castle'  as MapId, name: '天空城',       flag: 'sky_castle_visited',  x: 5,  y: 5  },
+      { mapId: 'demon_castle'as MapId, name: '魔王の城',     flag: 'demon_castle_visited',x: 5,  y: 5  },
     ].filter(d => this.save.flags[d.flag]);
 
     const overlay = document.createElement('div');
@@ -1551,9 +1647,14 @@ export class WorldScreen {
   // ─── リレミト (ダンジョン脱出) ───────────────────────────────────────────
 
   showReleimitoDialog() {
-    const isDungeon = this.mapId === 'dungeon' || this.mapId === 'dungeon2' || this.mapId === 'dungeon3';
-    if (!isDungeon) {
-      this.showDialogue('システム', ['ここでは使えない。']);
+    const dungeonMaps: string[] = [
+      'dungeon', 'dungeon2', 'dungeon3',
+      'ruins', 'ice_cave', 'lava_cave', 'sea_temple', 'sky_castle', 'demon_castle',
+      'tmap_1', 'tmap_2', 'tmap_3', 'tmap_4', 'tmap_5',
+      'house1', 'house2', 'house3',
+    ];
+    if (!dungeonMaps.includes(this.mapId)) {
+      this.showDialogue('リレミト', ['屋外では使えない。\nダンジョン内でのみ使えるぞ。']);
       return;
     }
     if (this.dialogOpen) return;

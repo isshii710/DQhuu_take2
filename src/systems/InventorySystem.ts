@@ -1,4 +1,4 @@
-import type { CharacterSave, Equipment, InventoryEntry, ItemDef } from '../types';
+import type { CharacterSave, Equipment, InventoryEntry, ItemDef, PartyMember } from '../types';
 import { getItem } from '../data/items';
 
 export function addItem(save: CharacterSave, itemId: string, qty = 1): void {
@@ -49,6 +49,25 @@ export function unequipSlot(save: CharacterSave, slot: keyof Equipment): void {
   addItem(save, itemId);
   save.equipment[slot] = null;
   recalcEquipStats(save);
+}
+
+export function memberEquipItem(save: CharacterSave, member: PartyMember, itemId: string): string | null {
+  const item = getItem(itemId);
+  if (!item) return '不明なアイテムです';
+  if (item.type === 'consumable') return 'このアイテムは装備できません';
+  const slot = item.type as keyof Equipment;
+  const prev = member.equipment[slot];
+  if (prev) addItem(save, prev);
+  member.equipment[slot] = itemId;
+  removeItem(save, itemId);
+  return null;
+}
+
+export function memberUnequipSlot(save: CharacterSave, member: PartyMember, slot: keyof Equipment): void {
+  const itemId = member.equipment[slot];
+  if (!itemId) return;
+  addItem(save, itemId);
+  member.equipment[slot] = null;
 }
 
 export function recalcEquipStats(save: CharacterSave): void {
