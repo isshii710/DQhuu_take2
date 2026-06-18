@@ -214,7 +214,7 @@ function build3DObject(tileId: number): THREE.Object3D | null {
 
 export class WorldRenderer {
   readonly scene: THREE.Scene;
-  readonly camera: THREE.OrthographicCamera;
+  readonly camera: THREE.PerspectiveCamera;
   readonly renderer: THREE.WebGLRenderer;
 
   private composer!: EffectComposer;
@@ -237,9 +237,9 @@ export class WorldRenderer {
   private currentCamX = 0;
   private currentCamZ = 0;
 
-  private readonly CAM_H = 10;
-  private readonly CAM_Z_OFFSET = 9;
-  private readonly FRUSTUM = 5.5;
+  private readonly CAM_H = 12;
+  private readonly CAM_Z_OFFSET = 10;
+  private readonly FOV = 45; // perspective FOV in degrees
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
@@ -247,11 +247,10 @@ export class WorldRenderer {
     this.renderer.setClearColor(0x0a0a1a);
 
     this.scene = new THREE.Scene();
-    this.scene.fog = new THREE.Fog(0x0a0a1a, 22, 42);
+    this.scene.fog = new THREE.Fog(0x0a0a1a, 30, 60);
 
-    const aspect = canvas.clientWidth / canvas.clientHeight;
-    const f = this.FRUSTUM;
-    this.camera = new THREE.OrthographicCamera(-f, f, f / aspect, -f / aspect, 0.1, 100);
+    const aspect = canvas.clientWidth / canvas.clientHeight || 16 / 9;
+    this.camera = new THREE.PerspectiveCamera(this.FOV, aspect, 0.1, 120);
     this.camera.position.set(0, this.CAM_H, this.CAM_Z_OFFSET);
     this.camera.lookAt(0, 0, 0);
 
@@ -295,12 +294,7 @@ export class WorldRenderer {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.renderer.setSize(w, h);
-    const aspect = w / h;
-    const f = this.FRUSTUM;
-    this.camera.left   = -f;
-    this.camera.right  =  f;
-    this.camera.top    =  f / aspect;
-    this.camera.bottom = -f / aspect;
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
 
     if (this.composer && this.bokehPass) {
