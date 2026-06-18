@@ -210,6 +210,16 @@ function build3DObject(tileId: number): THREE.Object3D | null {
   }
 }
 
+function applyShadow(obj: THREE.Object3D): void {
+  obj.traverse(child => {
+    if ((child as THREE.Mesh).isMesh) {
+      const m = child as THREE.Mesh;
+      m.castShadow = true;
+      m.receiveShadow = true;
+    }
+  });
+}
+
 // ─── WorldRenderer ────────────────────────────────────────────────────────────
 
 export class WorldRenderer {
@@ -231,6 +241,13 @@ export class WorldRenderer {
   private buildingLights: THREE.PointLight[] = [];
   private chestGroups = new Map<string, { lid: THREE.Mesh; opened: boolean }>();
 
+  private sun!: THREE.DirectionalLight;
+  private blobShadowGroup = new THREE.Group();
+  private blobShadowMat: THREE.MeshBasicMaterial | null = null;
+  private playerBlob: THREE.Mesh | null = null;
+  private npcBlobs = new Map<string, THREE.Mesh>();
+  private enemyBlobs = new Map<string, THREE.Mesh>();
+
   private targetCamX = 0;
   private targetCamZ = 0;
   private currentCamX = 0;
@@ -244,6 +261,8 @@ export class WorldRenderer {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setClearColor(0x0a0a1a);
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
     this.scene = new THREE.Scene();
     this.scene.fog = new THREE.Fog(0x0a0a1a, 22, 42);
@@ -255,14 +274,24 @@ export class WorldRenderer {
     this.camera.lookAt(0, 0, 0);
 
     const ambient = new THREE.AmbientLight(0xffe6c4, 0.62);
-    const sun = new THREE.DirectionalLight(0xfff2d6, 1.15);
-    sun.position.set(6, 14, -3);
+    this.sun = new THREE.DirectionalLight(0xfff2d6, 1.15);
+    this.sun.position.set(6, 14, -3);
+    this.sun.castShadow = true;
+    this.sun.shadow.mapSize.set(1024, 1024);
+    this.sun.shadow.camera.near = 0.5;
+    this.sun.shadow.camera.far = 50;
+    this.sun.shadow.camera.left   = -10;
+    this.sun.shadow.camera.right  =  10;
+    this.sun.shadow.camera.top    =  10;
+    this.sun.shadow.camera.bottom = -10;
+    this.sun.shadow.bias = -0.002;
     const fill = new THREE.DirectionalLight(0x6688cc, 0.35);
     fill.position.set(-6, 8, 6);
-    this.scene.add(ambient, sun, fill);
+    this.scene.add(ambient, this.sun, this.sun.target, fill);
 
     this.scene.add(this.mapGroup);
     this.scene.add(this.exitMarkers);
+    this.scene.add(this.blobShadowGroup);
 
     this.setupComposer(canvas);
     this.onResize();
@@ -445,7 +474,14 @@ export class WorldRenderer {
     const groundGeo = this.buildTerrainGeometry(mapDef.tiles, cols, rows);
     const groundMat = new THREE.MeshLambertMaterial({ map: groundTex });
     const ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.receiveShadow = true;
     this.mapGroup.add(ground);
+
+    // Clear blob shadows from previous map
+    this.blobShadowGroup.clear();
+    this.playerBlob = null;
+    this.npcBlobs.clear();
+    this.enemyBlobs.clear();
 
     // 3D objects + warm point lights inside buildings
     for (let ty = 0; ty < rows; ty++) {
@@ -453,6 +489,7 @@ export class WorldRenderer {
         const tileId = mapDef.tiles[ty][tx];
         const obj = build3DObject(tileId);
         if (obj) {
+          applyShadow(obj);
           const h = TILE_H[tileId] ?? 0;
           obj.position.set(tx + 0.5, h, ty + 0.5);
           this.mapGroup.add(obj);
@@ -510,11 +547,17 @@ export class WorldRenderer {
 
   spawnPlayer(classIndex: number, tileX: number, tileZ: number): BillboardSprite {
     this.playerSprite?.removeFrom(this.scene);
+    if (this.playerBlob) this.blobShadowGroup.remove(this.playerBlob);
+
     const tex = getHeroTexture(classIndex);
     const sp = new BillboardSprite(tex, 8, 1.1);
     sp.setPosition(tileX + 0.5, SPRITE_Y, tileZ + 0.5);
     sp.addTo(this.scene);
     this.playerSprite = sp;
+
+    this.playerBlob = this.makeBlobMesh(0.65);
+    this.playerBlob.position.set(tileX + 0.5, 0.01, tileZ + 0.5);
+    this.blobShadowGroup.add(this.playerBlob);
 
     this.currentCamX = tileX + 0.5;
     this.currentCamZ = tileZ + 0.5;
@@ -543,6 +586,7 @@ export class WorldRenderer {
       const band = new THREE.Mesh(new THREE.BoxGeometry(0.57, 0.06, 0.44), mat(0xFFD700));
       band.position.y = 0.26;
       g.add(body, lid, band);
+      applyShadow(g);
       this.chestGroups.set(npc.id, { lid, opened: false });
       g.position.set(npc.tileX + 0.5, 0, npc.tileY + 0.5);
       this.mapGroup.add(g);
@@ -558,6 +602,12 @@ export class WorldRenderer {
     sp.setPosition(npc.tileX + 0.5, SPRITE_Y, npc.tileY + 0.5);
     sp.addTo(this.scene);
     this.npcSprites.set(npc.id, sp);
+
+    // Static blob shadow for NPC (NPCs don't move)
+    const npcBlob = this.makeBlobMesh(0.55);
+    npcBlob.position.set(npc.tileX + 0.5, 0.01, npc.tileY + 0.5);
+    this.blobShadowGroup.add(npcBlob);
+    this.npcBlobs.set(npc.id, npcBlob);
   }
 
   // ─── Field enemies ────────────────────────────────────────────────────────
@@ -568,6 +618,11 @@ export class WorldRenderer {
     sp.setPosition(tileX + 0.5, SPRITE_Y, tileZ + 0.5);
     sp.addTo(this.scene);
     this.fieldEnemySprites.set(id, sp);
+
+    const blob = this.makeBlobMesh(0.5);
+    blob.position.set(tileX + 0.5, 0.01, tileZ + 0.5);
+    this.blobShadowGroup.add(blob);
+    this.enemyBlobs.set(id, blob);
   }
 
   moveFieldEnemy(id: string, tileX: number, tileZ: number) {
@@ -593,11 +648,15 @@ export class WorldRenderer {
     if (!sp) return;
     sp.removeFrom(this.scene);
     this.fieldEnemySprites.delete(id);
+    const blob = this.enemyBlobs.get(id);
+    if (blob) { this.blobShadowGroup.remove(blob); this.enemyBlobs.delete(id); }
   }
 
   clearFieldEnemies() {
     this.fieldEnemySprites.forEach(sp => sp.removeFrom(this.scene));
     this.fieldEnemySprites.clear();
+    this.enemyBlobs.forEach(b => this.blobShadowGroup.remove(b));
+    this.enemyBlobs.clear();
   }
 
   // ─── Other players ────────────────────────────────────────────────────────
@@ -641,6 +700,33 @@ export class WorldRenderer {
     requestAnimationFrame(animate);
   }
 
+  private makeBlobMesh(size: number): THREE.Mesh {
+    if (!this.blobShadowMat) {
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const ctx = c.getContext('2d')!;
+      const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 30);
+      grad.addColorStop(0, 'rgba(0,0,0,0.5)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 64, 64);
+      const tex = new THREE.CanvasTexture(c);
+      this.blobShadowMat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        depthWrite: false,
+        opacity: 1,
+      });
+    }
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(size, size * 0.55),
+      this.blobShadowMat,
+    );
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.renderOrder = -1;
+    return mesh;
+  }
+
   // ─── Update / render ──────────────────────────────────────────────────────
 
   update(delta: number) {
@@ -652,6 +738,21 @@ export class WorldRenderer {
     const z = this.currentCamZ;
     this.camera.position.set(x, this.CAM_H, z + this.CAM_Z_OFFSET);
     this.camera.lookAt(x, 0, z);
+
+    // Keep shadow frustum centred on the visible area
+    this.sun.position.set(x + 6, 14, z - 3);
+    this.sun.target.position.set(x, 0, z);
+    this.sun.target.updateMatrixWorld();
+
+    // Sync blob shadow positions
+    if (this.playerBlob && this.playerSprite) {
+      const p = this.playerSprite.sprite.position;
+      this.playerBlob.position.set(p.x, 0.01, p.z);
+    }
+    this.fieldEnemySprites.forEach((sp, id) => {
+      const blob = this.enemyBlobs.get(id);
+      if (blob && sp) blob.position.set(sp.sprite.position.x, 0.01, sp.sprite.position.z);
+    });
 
     if (this.skyDome) {
       this.skyDome.position.set(x, 0, z);
