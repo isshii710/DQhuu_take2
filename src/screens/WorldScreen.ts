@@ -7,6 +7,8 @@ import { randomEncounter, ENEMY_MAP, ENCOUNTER_GROUPS } from '../data/enemies';
 import { ITEM_MAP } from '../data/items';
 import { hasItem, removeItem } from '../systems/InventorySystem';
 import { TREASURE_MAPS } from '../data/treasureMaps';
+import { QUESTS } from '../data/quests';
+import { checkQuestCompletion } from '../systems/QuestSystem';
 import { getEnemyTexture } from '../engine/TextureCache';
 import { mpManager } from '../systems/MultiplayerManager';
 import type { NetPlayer, EnemyDef } from '../types';
@@ -50,6 +52,17 @@ const MAP_FLAGS: Partial<Record<MapId, string>> = {
 
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
 const MOVE_DURATION = 250; // ms per tile move
+
+// Maps each quest to the MapIds where the target enemy can be found
+const QUEST_TARGET_MAPS: Record<string, MapId[]> = {
+  first_kill:    ['world'],
+  goblin_slayer: ['world'],
+  dragon_slayer: ['dungeon', 'world'],
+  metal_hunter:  ['world'],
+  maou:          ['dungeon', 'dungeon2', 'dungeon3'],
+  shadow_knight: ['dungeon'],
+  demon_lord:    ['demon_castle'],
+};
 
 export interface BattleOpts { save: CharacterSave; enemies: EnemyDef[]; isMultiplayer: boolean; isHost: boolean; returnMap: MapId; onDefeat?: () => void; bossId?: string; }
 
@@ -115,6 +128,8 @@ export class WorldScreen {
   private shopLabels: Array<{ el: HTMLElement; worldX: number; worldZ: number }> = [];
   private exitLabels: Array<{ el: HTMLElement; worldX: number; worldZ: number }> = [];
   private exitLabelT = 0;
+  private questMarkers: Array<{ el: HTMLElement; worldX: number; worldZ: number }> = [];
+  private questPanel: HTMLElement | null = null;
   private mapTransitionCooldown = 0; // ms — prevents re-entering exit immediately after map change
 
   private onBattle!: (opts: BattleOpts) => void;
@@ -278,9 +293,11 @@ export class WorldScreen {
     this.minimapCtx = this.minimapCvs.getContext('2d')!;
     this.drawMinimap();
 
-    // Shop labels and exit labels
+    // Shop labels, exit labels, quest markers
     this.buildShopLabels();
     this.buildExitLabels();
+    this.buildQuestMarkers();
+    this.buildQuestPanel();
 
     this.uiRoot.style.display = 'block';
     this.hudEl.show();
@@ -371,6 +388,20 @@ export class WorldScreen {
         el.el.style.top = (s.y - 62) + 'px';
       } else {
         el.el.style.display = 'none';
+      }
+    }
+
+    // Quest marker projection + pulse
+    const qPulse = this.exitLabelT < 700 ? '1' : '0.6';
+    for (const qm of this.questMarkers) {
+      const s = this.renderer.projectToScreen(qm.worldX, qm.worldZ);
+      if (s) {
+        qm.el.style.display = 'block';
+        qm.el.style.opacity = qPulse;
+        qm.el.style.left = (s.x - qm.el.offsetWidth / 2) + 'px';
+        qm.el.style.top = (s.y - 80) + 'px';
+      } else {
+        qm.el.style.display = 'none';
       }
     }
 
@@ -553,9 +584,11 @@ export class WorldScreen {
     this.minimapCtx = this.minimapCvs.getContext('2d')!;
     this.drawMinimap();
 
-    // Shop labels and exit labels for new map
+    // Shop labels, exit labels, quest markers for new map
     this.buildShopLabels();
     this.buildExitLabels();
+    this.buildQuestMarkers();
+    this.updateQuestPanel();
 
     this.hudEl.update(this.save, mapDef.name);
     this.hudEl.showMapBanner(mapDef.name);
@@ -695,6 +728,26 @@ export class WorldScreen {
     // Exits (cyan)
     ctx.fillStyle = '#00FFFF';
     for (const ex of mapDef.exits) ctx.fillRect(ex.tileX*sw-1, ex.tileY*sh-1, Math.max(2,sw+2), Math.max(2,sh+2));
+    // Quest target exits (orange !)
+    const activeQuestMaps = new Set<string>();
+    if (this.save.completedQuests !== undefined || true) {
+      const completed = this.save.completedQuests ?? [];
+      for (const q of QUESTS) {
+        if (completed.includes(q.id)) continue;
+        const targets = QUEST_TARGET_MAPS[q.id] ?? [];
+        for (const t of targets) activeQuestMaps.add(t);
+      }
+    }
+    if (activeQuestMaps.size > 0) {
+      ctx.fillStyle = '#FF8C00';
+      ctx.font = `bold ${Math.max(6, Math.min(sw*2, 9))}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (const ex of mapDef.exits) {
+        if (!activeQuestMaps.has(ex.targetMap)) continue;
+        ctx.fillText('!', ex.tileX*sw + sw/2, ex.tileY*sh + sh/2);
+      }
+    }
     // Field enemies (red dot)
     ctx.fillStyle = '#FF3333';
     for (const fe of this.fieldEnemies) ctx.fillRect(fe.tileX*sw-1, fe.tileY*sh-1, Math.max(2,sw+1), Math.max(2,sh+1));
@@ -792,6 +845,192 @@ export class WorldScreen {
       this.uiRoot.appendChild(label);
       this.exitLabels.push({ el: label, worldX: exit.tileX + 0.5, worldZ: exit.tileY + 0.5 });
     }
+  }
+
+  // ─── Quest markers (world-space) ──────────────────────────────────────────
+
+  private buildQuestMarkers() {
+    for (const qm of this.questMarkers) qm.el.remove();
+    this.questMarkers = [];
+
+    const completed = this.save.completedQuests ?? [];
+    const activeQuests = QUESTS.filter(q => !completed.includes(q.id));
+    if (!activeQuests.length) return;
+
+    const targetMaps = new Set<MapId>();
+    for (const q of activeQuests) {
+      for (const m of (QUEST_TARGET_MAPS[q.id] ?? [])) targetMaps.add(m as MapId);
+    }
+
+    const mapDef = getMapDef(this.mapId);
+    const seen = new Set<string>();
+    for (const exit of mapDef.exits) {
+      if (!targetMaps.has(exit.targetMap as MapId) || seen.has(exit.targetMap)) continue;
+      seen.add(exit.targetMap);
+
+      const names = activeQuests
+        .filter(q => (QUEST_TARGET_MAPS[q.id] ?? []).includes(exit.targetMap as MapId))
+        .map(q => q.name)
+        .join(' / ');
+
+      const label = document.createElement('div');
+      label.style.cssText = `
+        position:absolute;pointer-events:none;z-index:8;white-space:nowrap;
+        font-size:12px;font-weight:bold;font-family:${FONT};
+        background:rgba(40,10,0,0.90);
+        border:2px solid rgba(255,140,0,0.95);
+        border-radius:6px;padding:3px 8px;
+        color:#FFAA00;display:none;
+        text-shadow:0 0 8px rgba(255,160,0,0.7);
+      `;
+      label.textContent = `❗ ${names}`;
+      this.uiRoot.appendChild(label);
+      this.questMarkers.push({ el: label, worldX: exit.tileX + 0.5, worldZ: exit.tileY + 0.5 });
+    }
+
+    // Also mark boss NPCs in current dungeon
+    const questBossIds: Record<string, string> = {
+      maou: 'boss_grosur', demon_lord: 'boss_demon',
+    };
+    for (const npc of mapDef.npcs) {
+      const quest = activeQuests.find(q => questBossIds[q.id] === npc.id);
+      if (!quest) continue;
+      const label = document.createElement('div');
+      label.style.cssText = `
+        position:absolute;pointer-events:none;z-index:8;white-space:nowrap;
+        font-size:12px;font-weight:bold;font-family:${FONT};
+        background:rgba(40,0,0,0.92);
+        border:2px solid rgba(255,50,50,0.95);
+        border-radius:6px;padding:3px 8px;
+        color:#FF6666;display:none;
+        text-shadow:0 0 8px rgba(255,80,80,0.7);
+      `;
+      label.textContent = `⚔ ${quest.name}`;
+      this.uiRoot.appendChild(label);
+      this.questMarkers.push({ el: label, worldX: npc.tileX + 0.5, worldZ: npc.tileY + 0.5 });
+    }
+  }
+
+  // ─── Quest panel (HUD overlay) ─────────────────────────────────────────────
+
+  private buildQuestPanel() {
+    this.questPanel?.remove();
+    this.questPanel = null;
+
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      position:absolute;left:8px;bottom:108px;
+      background:rgba(8,8,24,0.88);
+      border:1px solid rgba(255,140,0,0.5);
+      border-radius:6px;padding:6px 10px;
+      font-family:${FONT};pointer-events:auto;z-index:9;
+      min-width:160px;max-width:200px;
+    `;
+    panel.id = 'quest-panel';
+
+    const header = document.createElement('div');
+    header.style.cssText = 'color:#FFAA00;font-size:11px;font-weight:bold;cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none;';
+    header.innerHTML = '❗ クエスト <span id="quest-toggle" style="font-size:10px;color:#888;">▼</span>';
+
+    const body = document.createElement('div');
+    body.id = 'quest-panel-body';
+    body.style.cssText = 'margin-top:5px;';
+
+    let collapsed = false;
+    header.addEventListener('click', () => {
+      collapsed = !collapsed;
+      body.style.display = collapsed ? 'none' : 'block';
+      const tog = panel.querySelector('#quest-toggle') as HTMLElement;
+      if (tog) tog.textContent = collapsed ? '▶' : '▼';
+    });
+
+    panel.appendChild(header);
+    panel.appendChild(body);
+    this.uiRoot.appendChild(panel);
+    this.questPanel = panel;
+    this.updateQuestPanel();
+  }
+
+  public updateQuestPanel() {
+    const panel = this.questPanel;
+    if (!panel) return;
+    const body = panel.querySelector('#quest-panel-body') as HTMLElement;
+    if (!body) return;
+
+    const completed = this.save.completedQuests ?? [];
+    const kills = this.save.questKills ?? {};
+    const activeQuests = QUESTS.filter(q => !completed.includes(q.id));
+
+    if (!activeQuests.length) {
+      body.innerHTML = `<div style="color:#888;font-size:10px;">すべてのクエスト達成！</div>`;
+      return;
+    }
+
+    body.innerHTML = '';
+    for (const q of activeQuests) {
+      const row = document.createElement('div');
+      row.style.cssText = 'margin-bottom:5px;';
+
+      const nameEl = document.createElement('div');
+      nameEl.style.cssText = 'color:#FFD700;font-size:11px;font-weight:bold;';
+      nameEl.textContent = q.name;
+
+      const descEl = document.createElement('div');
+      descEl.style.cssText = 'color:#AAAACC;font-size:10px;margin-top:1px;';
+      descEl.textContent = q.desc;
+
+      let progressEl: HTMLElement | null = null;
+      if (q.killTarget && q.killTarget !== 'any' && q.killCount) {
+        const current = kills[q.killTarget] ?? 0;
+        const prog = document.createElement('div');
+        prog.style.cssText = 'margin-top:2px;';
+        const track = document.createElement('div');
+        track.style.cssText = 'height:4px;background:rgba(255,255,255,0.12);border-radius:2px;overflow:hidden;';
+        const fill = document.createElement('div');
+        const pct = Math.min(100, (current / q.killCount) * 100);
+        fill.style.cssText = `height:100%;width:${pct}%;background:#FF8C00;border-radius:2px;transition:width 0.3s;`;
+        track.appendChild(fill);
+        const label = document.createElement('div');
+        label.style.cssText = 'color:#FF8C00;font-size:10px;text-align:right;margin-top:1px;';
+        label.textContent = `${current} / ${q.killCount}`;
+        prog.appendChild(track);
+        prog.appendChild(label);
+        progressEl = prog;
+      } else if (q.killTarget === 'any' && q.killCount) {
+        const total = Object.values(kills).reduce((s, n) => s + n, 0);
+        const prog = document.createElement('div');
+        prog.style.cssText = 'margin-top:2px;';
+        const label = document.createElement('div');
+        label.style.cssText = 'color:#FF8C00;font-size:10px;';
+        label.textContent = `${total} / ${q.killCount}`;
+        prog.appendChild(label);
+        progressEl = prog;
+      }
+
+      row.appendChild(nameEl);
+      row.appendChild(descEl);
+      if (progressEl) row.appendChild(progressEl);
+      body.appendChild(row);
+    }
+  }
+
+  public notifyQuestComplete(questNames: string[]) {
+    if (!questNames.length) return;
+    const notif = document.createElement('div');
+    notif.style.cssText = `
+      position:absolute;top:50%;left:50%;
+      transform:translate(-50%,-50%);
+      background:rgba(10,10,30,0.97);
+      border:2px solid #FFAA00;border-radius:10px;
+      padding:18px 28px;text-align:center;
+      color:#FFAA00;font-size:15px;font-family:${FONT};
+      white-space:pre-line;line-height:1.8;
+      pointer-events:none;z-index:30;
+      animation:none;
+    `;
+    notif.textContent = `🎉 クエスト達成！\n${questNames.join('\n')}`;
+    this.uiRoot.appendChild(notif);
+    setTimeout(() => notif.remove(), 3000);
   }
 
   // ─── Dialogue ──────────────────────────────────────────────────────────────
