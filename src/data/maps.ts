@@ -59,6 +59,14 @@ const WORLD_TILES: number[][] = [
   [M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M,M],
 ];
 
+// Inject new area dungeon entrances into world map
+WORLD_TILES[22][8]  = D; // 古代遺跡
+WORLD_TILES[9][21]  = D; // 氷の洞窟
+WORLD_TILES[22][30] = D; // 溶岩洞窟
+WORLD_TILES[25][10] = D; // 海底神殿
+WORLD_TILES[20][25] = D; // 天空城
+WORLD_TILES[26][20] = D; // 魔王の城
+
 // 20×16 village interior
 const VILLAGE_TILES: number[][] = [
   [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
@@ -206,6 +214,119 @@ const DUNGEON3_TILES: number[][] = [
   [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
 ];
 
+// ─── New story areas (16×12 each) ────────────────────────────────────────────
+
+const RUINS_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Fl,Fl,Wl,Fl,Fl,Wl,Fl,Fl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Wl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
+const ICE_CAVE_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Fl,Wl,Fl,Fl,Wl,Fl,Wl,Wl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
+const LAVA_CAVE_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Wl],
+  [Wl,Wl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Fl,Fl,Wl,Fl,Fl,Wl,Fl,Fl,Wl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
+const SEA_TEMPLE_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Fl,Wl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Wl,Fl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
+const SKY_CASTLE_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Wl,Wl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Fl,Wl,Fl,Fl,Wl,Fl,Fl,Wl,Fl,Fl,Wl,Fl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
+const DEMON_CASTLE_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Fl,Fl,Wl,Fl,Fl,Wl,Fl,Fl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
+// ─── Treasure map dungeons (16×12 each) ──────────────────────────────────────
+
+const TMAP1_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Wl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Fl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Fl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl], // boss NPC at (8,10)
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+const TMAP2_TILES: number[][] = JSON.parse(JSON.stringify(TMAP1_TILES));
+const TMAP3_TILES: number[][] = JSON.parse(JSON.stringify(TMAP1_TILES));
+const TMAP4_TILES: number[][] = JSON.parse(JSON.stringify(TMAP1_TILES));
+const TMAP5_TILES: number[][] = JSON.parse(JSON.stringify(TMAP1_TILES));
+
 export const MAP_DEFS: MapDef[] = [
   {
     id: 'world',
@@ -215,9 +336,15 @@ export const MAP_DEFS: MapDef[] = [
     encounterGroup: 'world_field',
     npcs: [],
     exits: [
-      { tileX: 2,  tileY: 2,  targetMap: 'village', targetX: 9,  targetY: 11 },
-      { tileX: 35, tileY: 2,  targetMap: 'castle',  targetX: 9,  targetY: 11 },
-      { tileX: 19, tileY: 19, targetMap: 'dungeon', targetX: 9,  targetY: 11 },
+      { tileX: 2,  tileY: 2,  targetMap: 'village',      targetX: 9,  targetY: 11 },
+      { tileX: 35, tileY: 2,  targetMap: 'castle',       targetX: 9,  targetY: 11 },
+      { tileX: 19, tileY: 19, targetMap: 'dungeon',      targetX: 9,  targetY: 11 },
+      { tileX: 8,  tileY: 22, targetMap: 'ruins',        targetX: 7,  targetY: 9  },
+      { tileX: 21, tileY: 9,  targetMap: 'ice_cave',    targetX: 7,  targetY: 9  },
+      { tileX: 30, tileY: 22, targetMap: 'lava_cave',   targetX: 7,  targetY: 9  },
+      { tileX: 10, tileY: 25, targetMap: 'sea_temple',  targetX: 7,  targetY: 9  },
+      { tileX: 25, tileY: 20, targetMap: 'sky_castle',  targetX: 7,  targetY: 9  },
+      { tileX: 20, tileY: 26, targetMap: 'demon_castle',targetX: 7,  targetY: 9  },
     ],
   },
   {
@@ -456,6 +583,115 @@ export const MAP_DEFS: MapDef[] = [
       { tileX: 9,  tileY: 13, targetMap: 'dungeon2', targetX: 9,  targetY: 12 },
       { tileX: 10, tileY: 13, targetMap: 'dungeon2', targetX: 10, targetY: 12 },
     ],
+  },
+
+  // ─── New story areas ───────────────────────────────────────────────────────
+  {
+    id: 'ruins', name: '古代遺跡', tiles: RUINS_TILES,
+    bgColor: 0x1A1408, encounterGroup: 'ruins',
+    npcs: [
+      { id: 'ruins_sage', name: '石板の文字', dialogue: ['「最奥に眠る守護者を打ち破りし者に、大地の力を与えん」'], tileX: 2, tileY: 1, spriteColor: 0xCC9944 },
+      { id: 'boss_ruins', name: '石古の守護者', dialogue: ['ガガガ…侵入者ヲ排除スル…！'], tileX: 8, tileY: 1, spriteColor: 0x888866, bossId: 'ruins_boss' },
+      { id: 'chest_ruins', name: '宝箱', dialogue: [], tileX: 14, tileY: 1, spriteColor: 0xFFD700, isChest: true, chestPool: ['elixir', 'plate_mail', 'gacha_ticket', 'iron_helm'] },
+    ],
+    exits: [{ tileX: 7, tileY: 10, targetMap: 'world', targetX: 8, targetY: 22 }, { tileX: 8, tileY: 10, targetMap: 'world', targetX: 8, targetY: 22 }],
+  },
+  {
+    id: 'ice_cave', name: '氷の洞窟', tiles: ICE_CAVE_TILES,
+    bgColor: 0x080C1A, encounterGroup: 'ice_cave',
+    npcs: [
+      { id: 'ice_sage', name: '凍り付いた石板', dialogue: ['「この氷の深淵で、古の竜が怒りに眠る…」'], tileX: 2, tileY: 1, spriteColor: 0x88CCFF },
+      { id: 'boss_ice', name: '氷竜バルノース', dialogue: ['目覚めを妨げた者よ…永久の氷に閉じ込めてやろう！'], tileX: 8, tileY: 1, spriteColor: 0xAADDFF, bossId: 'ice_boss' },
+      { id: 'chest_ice', name: '宝箱', dialogue: [], tileX: 14, tileY: 1, spriteColor: 0xFFD700, isChest: true, chestPool: ['elixir', 'chain_mail', 'gacha_ticket', 'ether'] },
+    ],
+    exits: [{ tileX: 7, tileY: 10, targetMap: 'world', targetX: 21, targetY: 9 }, { tileX: 8, tileY: 10, targetMap: 'world', targetX: 21, targetY: 9 }],
+  },
+  {
+    id: 'lava_cave', name: '溶岩洞窟', tiles: LAVA_CAVE_TILES,
+    bgColor: 0x1A0400, encounterGroup: 'lava_cave',
+    npcs: [
+      { id: 'lava_sage', name: '燃え盛る石碑', dialogue: ['「灼熱の王は滅びを司る。その力は計り知れない…」'], tileX: 2, tileY: 1, spriteColor: 0xFF8844 },
+      { id: 'boss_lava', name: '炎の大巨人', dialogue: ['グオォォ！貴様らを灰にしてくれる！'], tileX: 8, tileY: 1, spriteColor: 0xFF4422, bossId: 'lava_boss' },
+      { id: 'chest_lava', name: '宝箱', dialogue: [], tileX: 14, tileY: 1, spriteColor: 0xFFD700, isChest: true, chestPool: ['elixir', 'plate_mail', 'gacha_ticket', 'crystal_staff'] },
+    ],
+    exits: [{ tileX: 7, tileY: 10, targetMap: 'world', targetX: 30, targetY: 22 }, { tileX: 8, tileY: 10, targetMap: 'world', targetX: 30, targetY: 22 }],
+  },
+  {
+    id: 'sea_temple', name: '海底神殿', tiles: SEA_TEMPLE_TILES,
+    bgColor: 0x001020, encounterGroup: 'sea_temple',
+    npcs: [
+      { id: 'sea_sage', name: '海底の碑文', dialogue: ['「深淵の神は古の誓いを守り、永劫にこの場所を守護する…」'], tileX: 2, tileY: 1, spriteColor: 0x2288FF },
+      { id: 'boss_sea', name: '海神レヴィアタン', dialogue: ['この聖域を汚す者よ！海の怒りを受けるがいい！'], tileX: 8, tileY: 1, spriteColor: 0x0044AA, bossId: 'sea_boss' },
+      { id: 'chest_sea', name: '宝箱', dialogue: [], tileX: 14, tileY: 1, spriteColor: 0xFFD700, isChest: true, chestPool: ['elixir', 'holy_armor', 'gacha_ticket', 'ether'] },
+    ],
+    exits: [{ tileX: 7, tileY: 10, targetMap: 'world', targetX: 10, targetY: 25 }, { tileX: 8, tileY: 10, targetMap: 'world', targetX: 10, targetY: 25 }],
+  },
+  {
+    id: 'sky_castle', name: '天空城', tiles: SKY_CASTLE_TILES,
+    bgColor: 0x080830, encounterGroup: 'sky_castle',
+    npcs: [
+      { id: 'sky_sage', name: '天空の碑', dialogue: ['「かつて天使たちが守りし聖域、今は堕ちた者に支配されている…」'], tileX: 2, tileY: 1, spriteColor: 0xFFFFAA },
+      { id: 'boss_sky', name: '堕天使ラフィエル', dialogue: ['愚かな人間が！この天空城に足を踏み入れた罰を受けよ！'], tileX: 8, tileY: 1, spriteColor: 0xCCCCFF, bossId: 'sky_boss' },
+      { id: 'chest_sky', name: '宝箱', dialogue: [], tileX: 14, tileY: 1, spriteColor: 0xFFD700, isChest: true, chestPool: ['elixir', 'holy_helm', 'gacha_ticket', 'speed_boots'] },
+    ],
+    exits: [{ tileX: 7, tileY: 10, targetMap: 'world', targetX: 25, targetY: 20 }, { tileX: 8, tileY: 10, targetMap: 'world', targetX: 25, targetY: 20 }],
+  },
+  {
+    id: 'demon_castle', name: '魔王の城', tiles: DEMON_CASTLE_TILES,
+    bgColor: 0x080008, encounterGroup: 'demon_castle',
+    npcs: [
+      { id: 'demon_sage', name: '呪われた石板', dialogue: ['「魔王は滅びても、その怨念が新たな器に宿った…最後の戦いに備えよ」'], tileX: 2, tileY: 1, spriteColor: 0xFF44FF },
+      { id: 'boss_demon', name: '魔王グロスールⅡ', dialogue: ['フハハハ！我は滅びぬ！お前たちをここで葬り去ってやる！'], tileX: 8, tileY: 1, spriteColor: 0xFF0088, bossId: 'demon_boss' },
+      { id: 'chest_demon', name: '宝箱', dialogue: [], tileX: 14, tileY: 1, spriteColor: 0xFFD700, isChest: true, chestPool: ['dark_scythe', 'holy_sword', 'elixir', 'ether'] },
+    ],
+    exits: [{ tileX: 7, tileY: 10, targetMap: 'world', targetX: 20, targetY: 26 }, { tileX: 8, tileY: 10, targetMap: 'world', targetX: 20, targetY: 26 }],
+  },
+
+  // ─── Treasure map dungeons ─────────────────────────────────────────────────
+  {
+    id: 'tmap_1', name: '古の地図①', tiles: TMAP1_TILES,
+    bgColor: 0x14100A, encounterGroup: 'tmap_1',
+    npcs: [
+      { id: 'tmap1_boss', name: '遺跡のゴーレム王', dialogue: ['侵入者ヨ…地図ノ力ヲ返セ！'], tileX: 8, tileY: 10, spriteColor: 0x888866, bossId: 'tmap_boss_1' },
+      { id: 'tmap1_chest', name: '宝箱', dialogue: [], tileX: 13, tileY: 3, spriteColor: 0xFFD700, isChest: true, chestPool: ['potion', 'elixir', 'gacha_ticket', 'iron_sword'] },
+    ],
+    exits: [{ tileX: 7, tileY: 1, targetMap: 'world', targetX: 20, targetY: 20 }],
+  },
+  {
+    id: 'tmap_2', name: '古の地図②', tiles: TMAP2_TILES,
+    bgColor: 0x080C14, encounterGroup: 'tmap_2',
+    npcs: [
+      { id: 'tmap2_boss', name: '氷の幻獣フェニルス', dialogue: ['この地図の先に眠る力は渡さぬ！'], tileX: 8, tileY: 10, spriteColor: 0xAADDFF, bossId: 'tmap_boss_2' },
+      { id: 'tmap2_chest', name: '宝箱', dialogue: [], tileX: 13, tileY: 3, spriteColor: 0xFFD700, isChest: true, chestPool: ['ether', 'elixir', 'gacha_ticket', 'crystal_staff'] },
+    ],
+    exits: [{ tileX: 7, tileY: 1, targetMap: 'world', targetX: 20, targetY: 20 }],
+  },
+  {
+    id: 'tmap_3', name: '古の地図③', tiles: TMAP3_TILES,
+    bgColor: 0x140400, encounterGroup: 'tmap_3',
+    npcs: [
+      { id: 'tmap3_boss', name: '炎の魔獣フラガラッハ', dialogue: ['地図を持つ者に、炎の試練を与えよう！'], tileX: 8, tileY: 10, spriteColor: 0xFF6622, bossId: 'tmap_boss_3' },
+      { id: 'tmap3_chest', name: '宝箱', dialogue: [], tileX: 13, tileY: 3, spriteColor: 0xFFD700, isChest: true, chestPool: ['elixir', 'plate_mail', 'gacha_ticket', 'shadow_blade'] },
+    ],
+    exits: [{ tileX: 7, tileY: 1, targetMap: 'world', targetX: 20, targetY: 20 }],
+  },
+  {
+    id: 'tmap_4', name: '古の地図④', tiles: TMAP4_TILES,
+    bgColor: 0x001018, encounterGroup: 'tmap_4',
+    npcs: [
+      { id: 'tmap4_boss', name: '深海の怪物クラーケン', dialogue: ['この地図は我の縄張り…砕いてくれる！'], tileX: 8, tileY: 10, spriteColor: 0x224488, bossId: 'tmap_boss_4' },
+      { id: 'tmap4_chest', name: '宝箱', dialogue: [], tileX: 13, tileY: 3, spriteColor: 0xFFD700, isChest: true, chestPool: ['elixir', 'holy_armor', 'gacha_ticket', 'ocean_staff'] },
+    ],
+    exits: [{ tileX: 7, tileY: 1, targetMap: 'world', targetX: 20, targetY: 20 }],
+  },
+  {
+    id: 'tmap_5', name: '古の地図⑤', tiles: TMAP5_TILES,
+    bgColor: 0x060820, encounterGroup: 'tmap_5',
+    npcs: [
+      { id: 'tmap5_boss', name: '天空の魔龍セラフィア', dialogue: ['地図の謎を解いた者よ…我を倒せるか！'], tileX: 8, tileY: 10, spriteColor: 0xCCAAFF, bossId: 'tmap_boss_5' },
+      { id: 'tmap5_chest', name: '宝箱', dialogue: [], tileX: 13, tileY: 3, spriteColor: 0xFFD700, isChest: true, chestPool: ['dark_scythe', 'elixir', 'gacha_ticket', 'sky_lance'] },
+    ],
+    exits: [{ tileX: 7, tileY: 1, targetMap: 'world', targetX: 20, targetY: 20 }],
   },
 ];
 

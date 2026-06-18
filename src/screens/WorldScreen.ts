@@ -43,7 +43,7 @@ const MAP_FLAGS: Partial<Record<MapId, string>> = {
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
 const MOVE_DURATION = 250; // ms per tile move
 
-export interface BattleOpts { save: CharacterSave; enemies: EnemyDef[]; isMultiplayer: boolean; isHost: boolean; returnMap: MapId; onDefeat?: () => void; }
+export interface BattleOpts { save: CharacterSave; enemies: EnemyDef[]; isMultiplayer: boolean; isHost: boolean; returnMap: MapId; onDefeat?: () => void; bossId?: string; }
 
 export class WorldScreen {
   private uiRoot: HTMLElement;
@@ -91,6 +91,11 @@ export class WorldScreen {
 
   private pendingClassPick: { def: PartyMemberDef } | null = null;
   private pendingBossBattle = false;
+  private pendingBossId: string | null = null; // generic boss NPC battle
+
+  private onOpenGacha?: () => void;
+  private onOpenCraft?: () => void;
+  private onEnterMap?: (mapId: MapId) => void;
 
   private minimapCvs: HTMLCanvasElement | null = null;
   private minimapCtx: CanvasRenderingContext2D | null = null;
@@ -105,7 +110,7 @@ export class WorldScreen {
   private mapTransitionCooldown = 0; // ms — prevents re-entering exit immediately after map change
 
   private onBattle!: (opts: BattleOpts) => void;
-  private onMenu!:   (save: CharacterSave, onClose: (s: CharacterSave)=>void, onFieldAction?: (action: string) => void) => void;
+  private onMenu!:   (save: CharacterSave, onClose: (s: CharacterSave)=>void, onFieldAction?: (action: string) => void, onOpenGacha?: ()=>void, onOpenCraft?: ()=>void, onEnterMap?: (mapId: MapId)=>void) => void;
 
   private active = false;
   private lastTime = 0;
@@ -207,8 +212,15 @@ export class WorldScreen {
     save: CharacterSave,
     opts: { isMultiplayer: boolean; isHost?: boolean; fromBattle?: boolean },
     onBattle: (o: BattleOpts)=>void,
-    onMenu:   (s: CharacterSave, onClose: (s:CharacterSave)=>void, onFieldAction?: (action: string) => void)=>void
+    onMenu:   (s: CharacterSave, onClose: (s:CharacterSave)=>void, onFieldAction?: (action: string) => void,
+               onOpenGacha?: ()=>void, onOpenCraft?: ()=>void, onEnterMap?: (mapId: MapId)=>void)=>void,
+    onOpenGacha?: () => void,
+    onOpenCraft?: () => void,
+    onEnterMap?: (mapId: MapId) => void,
   ) {
+    this.onOpenGacha = onOpenGacha;
+    this.onOpenCraft = onOpenCraft;
+    this.onEnterMap  = onEnterMap;
     this.save = save;
     this.mapId = save.position.mapId;
     this.isMultiplayer = opts.isMultiplayer;
@@ -439,9 +451,10 @@ export class WorldScreen {
         this.showMedalMasterDialog();
       } else if (npc.shopType) {
         this.showShopDialog(npc);
-      } else if (npc.id === 'boss_grosur') {
+      } else if (npc.bossId) {
         this.showDialogue(npc.name, npc.dialogue);
-        this.pendingBossBattle = true;
+        this.pendingBossId = npc.bossId;
+        if (npc.id === 'boss_grosur') this.pendingBossBattle = true;
       } else if (npc.recruitId) {
         this.handleRecruitNpc(npc);
       } else {
@@ -541,7 +554,7 @@ export class WorldScreen {
     }
   }
 
-  private triggerBattle(enemies?: EnemyDef[]) {
+  private triggerBattle(enemies?: EnemyDef[], bossId?: string) {
     this.preBattleMapId = this.mapId;
     const mapDef = getMapDef(this.mapId);
     const battleEnemies = enemies ?? randomEncounter(mapDef.encounterGroup ?? 'world_field');
@@ -553,7 +566,7 @@ export class WorldScreen {
     requestAnimationFrame(() => { flash.style.opacity = '1'; });
 
     setTimeout(() => {
-      this.onBattle({ save: this.save, enemies: battleEnemies, isMultiplayer: this.isMultiplayer, isHost: this.isHost, returnMap: this.mapId, onDefeat: () => this.handleDefeat() });
+      this.onBattle({ save: this.save, enemies: battleEnemies, isMultiplayer: this.isMultiplayer, isHost: this.isHost, returnMap: this.mapId, onDefeat: () => this.handleDefeat(), bossId });
       flash.style.transition = 'opacity 0.22s ease-out';
       flash.style.opacity = '0';
       setTimeout(() => flash.remove(), 280);
@@ -781,8 +794,20 @@ export class WorldScreen {
       this.dialogOpen = false;
       if (this.pendingBossBattle) {
         this.pendingBossBattle = false;
+        this.pendingBossId = null;
         const boss = { ...ENEMY_MAP['grosur'] };
         this.triggerBattle([boss]);
+      } else if (this.pendingBossId) {
+        const bossId = this.pendingBossId;
+        this.pendingBossId = null;
+        const bossEnemy = ENEMY_MAP[bossId];
+        if (bossEnemy) {
+          // Scale boss HP/ATK by boss level
+          const prog = (this.save.bossProgress ?? {})[bossId] ?? { count: 0, level: 1 };
+          const scale = 1 + (prog.level - 1) * 0.3;
+          const scaled = { ...bossEnemy, hp: Math.round(bossEnemy.hp * scale), atk: Math.round(bossEnemy.atk * scale) };
+          this.triggerBattle([scaled], bossId);
+        }
       } else if (this.pendingClassPick) {
         const pick = this.pendingClassPick;
         this.pendingClassPick = null;
@@ -932,7 +957,7 @@ export class WorldScreen {
     }, (action: string) => {
       if (action === 'rula') this.showRulaDialog();
       else if (action === 'releimito') this.showReleimitoDialog();
-    });
+    }, this.onOpenGacha, this.onOpenCraft, this.onEnterMap);
   }
 
   // ─── ショップダイアログ ──────────────────────────────────────────────────────
