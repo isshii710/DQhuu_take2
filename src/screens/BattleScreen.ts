@@ -7,6 +7,8 @@ import {
 } from '../systems/BattleSystem';
 import { effectiveStats, memberEffectiveStats } from '../systems/InventorySystem';
 import { writeSave } from '../systems/SaveSystem';
+import { checkQuestCompletion } from '../systems/QuestSystem';
+import { QUESTS } from '../data/quests';
 import { mpManager } from '../systems/MultiplayerManager';
 import { getEnemyCanvas, getHeroCanvas } from '../engine/TextureCache';
 import type { BattleRoundResult } from '../types';
@@ -1082,9 +1084,25 @@ export class BattleScreen {
     this.save.stats.hp = this.playerC.hp;
     this.save.stats.mp = this.playerC.mp;
     this.save.gold += totalGold;
+
+    // Track quest kills
+    if (!this.save.questKills) this.save.questKills = {};
+    for (let i = 0; i < this.enemyCs.length; i++) {
+      const ec = this.enemyCs[i];
+      const def = this.enemies[i];
+      if (def && ec.hp <= 0 && !(ec as any).fled) {
+        this.save.questKills[def.id] = (this.save.questKills[def.id] ?? 0) + 1;
+      }
+    }
+    const newlyCompleted = checkQuestCompletion(this.save);
     writeSave(this.save);
 
     let msg = `★ 勝利！ ★\n\n${totalExp} EXP 獲得！\n${totalGold} G 獲得！`;
+    if (newlyCompleted.length > 0) {
+      msg += '\n\n🎉 クエスト達成！\n' + newlyCompleted
+        .map(id => QUESTS.find(q => q.id === id)?.name ?? id)
+        .join('\n');
+    }
     if (levelResult.leveled) msg += `\n\n${this.save.name} レベルアップ！ Lv.${levelResult.newLevel}`;
     for (const lu of partyLevelUps) {
       msg += `\n${lu.name} レベルアップ！ Lv.${lu.newLevel}`;
