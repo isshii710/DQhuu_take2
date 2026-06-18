@@ -256,7 +256,7 @@ export class WorldScreen {
     this.playerSprite = this.renderer.spawnPlayer(ci, save.position.tileX, save.position.tileY);
 
     // Field enemies
-    const isDungeon = (id: string) => id === 'dungeon' || id === 'dungeon2' || id === 'dungeon3';
+    const isDungeon = (id: string) => ['dungeon','dungeon2','dungeon3','ruins','ice_cave','lava_cave','sea_temple','sky_castle','demon_castle','tmap_1','tmap_2','tmap_3','tmap_4','tmap_5'].includes(id);
     const sameMapReturn = opts.fromBattle && this.preBattleMapId === this.mapId;
     if (sameMapReturn) {
       for (const fe of this.fieldEnemies) {
@@ -455,6 +455,10 @@ export class WorldScreen {
         this.showChurchDialog();
       } else if (npc.id === 'medal_master') {
         this.showMedalMasterDialog();
+      } else if (npc.id === 'ship_merchant') {
+        this.showShipMerchantDialog();
+      } else if (npc.id === 'dock_captain') {
+        this.showDockDialog();
       } else if (npc.shopType) {
         this.showShopDialog(npc);
       } else if (npc.id === 'boss_grosur') {
@@ -495,7 +499,7 @@ export class WorldScreen {
         return;
       }
       // Random encounters in dungeons (floor tiles don't match ENCOUNTER_TILES, so check inline)
-      const inDungeon = this.mapId === 'dungeon' || this.mapId === 'dungeon2' || this.mapId === 'dungeon3';
+      const inDungeon = ['dungeon','dungeon2','dungeon3','ruins','ice_cave','lava_cave','sea_temple','sky_castle','demon_castle','tmap_1','tmap_2','tmap_3','tmap_4','tmap_5'].includes(this.mapId);
       if (inDungeon && !this.stealthMode) {
         this.stepsSinceEncounter++;
         if (this.stepsSinceEncounter >= 5 && Math.random() < ENCOUNTER_RATE) {
@@ -531,7 +535,7 @@ export class WorldScreen {
       targetX, targetY
     );
 
-    const isDungeon = (id: string) => id === 'dungeon' || id === 'dungeon2' || id === 'dungeon3';
+    const isDungeon = (id: string) => ['dungeon','dungeon2','dungeon3','ruins','ice_cave','lava_cave','sea_temple','sky_castle','demon_castle','tmap_1','tmap_2','tmap_3','tmap_4','tmap_5'].includes(id);
     if (mapDef.encounterGroup && !isDungeon(targetMap)) this.spawnFieldEnemies();
 
     // Minimap for new map
@@ -754,6 +758,12 @@ export class WorldScreen {
         dungeon: isGoingUp ? '⬆ 地下1階へ' : '⬇ 闇の洞窟へ',
         dungeon2: this.mapId === 'dungeon3' ? '⬆ 地下2階へ' : '⬇ 地下2階へ',
         dungeon3: '⬇ 地下3階へ',
+        ruins:        this.mapId === 'world' ? '⬇ 古代遺跡へ' : '⬆ フィールドへ',
+        ice_cave:     this.mapId === 'ruins' ? '⬇ 古代遺跡 深部へ' : '⬆ 古代遺跡 1Fへ',
+        lava_cave:    this.mapId === 'world' ? '⬇ 溶岩洞窟へ' : '⬆ フィールドへ',
+        sky_castle:   this.mapId === 'lava_cave' ? '⬇ 天空の試練場へ' : '⬆ 溶岩洞窟へ',
+        sea_temple:   '⬇ 海底神殿へ',
+        demon_castle: this.mapId === 'sea_temple' ? '⬇ 魔王の城へ' : '⬆ 海底神殿へ',
       };
       const text = MAP_TEXT[exit.targetMap] ?? `→ ${exit.targetMap}`;
       const label = document.createElement('div');
@@ -918,6 +928,14 @@ export class WorldScreen {
       }
       if (npc.id === 'medal_master') {
         this.showMedalMasterDialog();
+        return;
+      }
+      if (npc.id === 'ship_merchant') {
+        this.showShipMerchantDialog();
+        return;
+      }
+      if (npc.id === 'dock_captain') {
+        this.showDockDialog();
         return;
       }
       if (npc.shopType) {
@@ -1584,6 +1602,95 @@ export class WorldScreen {
     setTimeout(() => {
       this.showDialogue('システム', ['全滅してしまった…', 'ゴールドが半分になってしまった…', 'ハジメ村に戻されました。']);
     }, 300);
+  }
+
+  // ─── 船商人 / 港の船頭 ───────────────────────────────────────────────────
+
+  private showShipMerchantDialog() {
+    if (this.save.flags['has_ship']) {
+      this.showDialogue('⛵ 船商人', ['すでに船をお持ちです。', '港の船頭に話しかければ出航できますよ。']);
+      return;
+    }
+    if (this.dialogOpen) return;
+    this.dialogOpen = true;
+    const SHIP_COST = 5000;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);pointer-events:auto;z-index:20;`;
+    const box = document.createElement('div');
+    box.style.cssText = `background:rgba(10,10,30,0.97);border:2px solid rgba(212,175,55,0.7);border-radius:8px;padding:20px 22px;width:270px;font-family:${FONT};`;
+
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#FFD700;font-size:14px;margin-bottom:6px;';
+    title.textContent = '⛵ 船商人';
+    const msg = document.createElement('div');
+    msg.style.cssText = 'color:#FFFDE7;font-size:13px;margin-bottom:14px;line-height:1.5;';
+    msg.textContent = `船を売ります。\n${SHIP_COST} ゴールドですがよろしいですか？\n（所持金: ${this.save.gold} G）`;
+    box.appendChild(title); box.appendChild(msg);
+
+    const close = () => { overlay.remove(); this.dialogOpen = false; };
+    const canBuy = this.save.gold >= SHIP_COST;
+
+    const yesBtn = document.createElement('button');
+    yesBtn.style.cssText = `display:block;width:100%;padding:10px 0;margin-bottom:8px;background:${canBuy?'rgba(10,30,10,0.9)':'rgba(16,16,28,0.9)'};color:${canBuy?'#AAFFAA':'#666677'};border:1px solid ${canBuy?'rgba(68,187,68,0.5)':'rgba(51,68,102,0.5)'};border-radius:4px;font-size:14px;font-family:${FONT};cursor:${canBuy?'pointer':'default'};pointer-events:auto;`;
+    yesBtn.textContent = canBuy ? 'はい（購入する）' : 'ゴールドが足りない';
+    if (canBuy) {
+      yesBtn.addEventListener('click', () => {
+        this.save.gold -= SHIP_COST;
+        this.save.flags['has_ship'] = true;
+        writeSave(this.save);
+        this.hudEl.update(this.save, getMapDef(this.mapId).name);
+        close();
+        this.showDialogue('⛵ 船商人', ['ありがとうございます！', '船を手に入れました！⛵', '港の船頭に話しかければ出航できますよ。']);
+      });
+    }
+    box.appendChild(yesBtn);
+
+    const noBtn = document.createElement('button');
+    noBtn.style.cssText = `display:block;width:100%;padding:8px 0;background:rgba(16,16,28,0.9);color:#888899;border:1px solid rgba(51,68,102,0.5);border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    noBtn.textContent = 'いいえ';
+    noBtn.addEventListener('click', close);
+    box.appendChild(noBtn);
+    overlay.appendChild(box);
+    this.uiRoot.appendChild(overlay);
+  }
+
+  private showDockDialog() {
+    if (!this.save.flags['has_ship']) {
+      this.showDialogue('⚓ 港の船頭', ['船がなければ出航できません。', '村の船商人から船を購入してください。']);
+      return;
+    }
+    if (this.dialogOpen) return;
+    this.dialogOpen = true;
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.65);pointer-events:auto;z-index:20;`;
+    const box = document.createElement('div');
+    box.style.cssText = `background:rgba(10,10,30,0.97);border:2px solid rgba(212,175,55,0.7);border-radius:8px;padding:20px 22px;width:270px;font-family:${FONT};`;
+
+    const title = document.createElement('div');
+    title.style.cssText = 'color:#FFD700;font-size:14px;margin-bottom:6px;';
+    title.textContent = '⚓ 港の船頭';
+    const msg = document.createElement('div');
+    msg.style.cssText = 'color:#FFFDE7;font-size:13px;margin-bottom:14px;line-height:1.5;';
+    msg.textContent = '海の向こうの神殿へ出航しますか？';
+    box.appendChild(title); box.appendChild(msg);
+
+    const close = () => { overlay.remove(); this.dialogOpen = false; };
+
+    const yesBtn = document.createElement('button');
+    yesBtn.style.cssText = `display:block;width:100%;padding:10px 0;margin-bottom:8px;background:rgba(10,20,40,0.9);color:#88CCFF;border:1px solid rgba(68,136,255,0.5);border-radius:4px;font-size:14px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    yesBtn.textContent = 'はい（出航する）';
+    yesBtn.addEventListener('click', () => { close(); this.changeMap('sea_temple', 9, 11); });
+    box.appendChild(yesBtn);
+
+    const noBtn = document.createElement('button');
+    noBtn.style.cssText = `display:block;width:100%;padding:8px 0;background:rgba(16,16,28,0.9);color:#888899;border:1px solid rgba(51,68,102,0.5);border-radius:4px;font-size:13px;font-family:${FONT};cursor:pointer;pointer-events:auto;`;
+    noBtn.textContent = 'いいえ';
+    noBtn.addEventListener('click', close);
+    box.appendChild(noBtn);
+    overlay.appendChild(box);
+    this.uiRoot.appendChild(overlay);
   }
 
   // ─── ルーラ (ワープ) ─────────────────────────────────────────────────────

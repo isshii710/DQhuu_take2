@@ -27,7 +27,7 @@ const WORLD_TILES: number[][] = [
   [M,G,P,G,G,P,P,P,P,P,P,P,P,P,G,G,G,G,G,G,G,G,G,G,G,Tr,F,F,F,F,F,F,Tr,G,P,G,G,G,G,M],
   [M,G,P,G,G,G,G,G,G,G,P,G,G,P,G,G,G,G,G,G,G,G,G,G,F,F,F,F,F,F,F,F,F,G,P,G,G,G,G,M],
   [M,G,P,G,G,G,G,G,G,G,P,G,G,P,P,P,G,G,G,G,G,G,G,F,F,F,F,F,F,F,F,F,F,G,P,G,G,G,G,M],
-  [M,G,P,G,G,G,G,G,G,G,P,G,G,G,G,P,G,G,G,G,G,G,G,F,F,F,F,F,F,F,F,F,F,G,P,G,G,G,G,M],
+  [M,G,P,G,G,G,G,G,G,G,P,G,G,G,G,P,G,G,G,G,G,G,G,F,F,F,F,F,F,F,F,F,F,D,P,G,G,G,G,M],
   [M,G,P,P,P,P,P,P,P,G,P,G,G,G,G,P,G,G,G,G,G,G,G,F,F,F,F,F,F,F,F,F,G,G,P,G,G,G,G,M],
   [M,G,G,G,G,G,G,G,P,G,P,G,G,G,G,P,G,G,G,G,G,G,G,G,F,F,F,F,F,F,F,G,G,G,G,G,G,G,G,M],
   [M,G,G,G,W,W,W,G,P,G,P,P,P,G,G,P,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,M],
@@ -39,7 +39,7 @@ const WORLD_TILES: number[][] = [
   [M,G,G,G,G,G,G,G,G,G,G,P,G,G,P,G,G,G,G,D,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,M],
   [M,G,G,G,G,G,G,G,G,G,G,P,G,G,P,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,M],
   [M,G,G,G,G,G,G,G,G,G,G,P,P,P,P,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,M],
-  [M,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,M],
+  [M,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,D,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,M],
   [M,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,M],
   [M,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,M],
   [M,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,G,M],
@@ -166,6 +166,123 @@ const DUNGEON3_TILES: number[][] = [
   [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
 ];
 
+// ─── 古代遺跡 (ruins→ice_cave 2-floor chain) ─────────────────────────────────
+const RUINS_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
+const ICE_CAVE_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
+// ─── 溶岩洞窟 (lava_cave→sky_castle 2-floor chain) ───────────────────────────
+const LAVA_CAVE_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
+const SKY_CASTLE_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
+// ─── 海底神殿 (sea_temple→demon_castle 2-floor chain, ship required) ──────────
+const SEA_TEMPLE_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
+const DEMON_CASTLE_TILES: number[][] = [
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Wl],
+  [Wl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Fl,Fl,Wl,Wl,Wl,Wl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Dr,Dr,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Fl,Wl],
+  [Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl,Wl],
+];
+
 export const MAP_DEFS: MapDef[] = [
   {
     id: 'world',
@@ -175,9 +292,11 @@ export const MAP_DEFS: MapDef[] = [
     encounterGroup: 'world_field',
     npcs: [],
     exits: [
-      { tileX: 2,  tileY: 2,  targetMap: 'village', targetX: 9,  targetY: 11 },
-      { tileX: 35, tileY: 2,  targetMap: 'castle',  targetX: 9,  targetY: 11 },
-      { tileX: 19, tileY: 19, targetMap: 'dungeon', targetX: 9,  targetY: 11 },
+      { tileX: 2,  tileY: 2,  targetMap: 'village',  targetX: 9,  targetY: 11 },
+      { tileX: 35, tileY: 2,  targetMap: 'castle',   targetX: 9,  targetY: 11 },
+      { tileX: 19, tileY: 19, targetMap: 'dungeon',  targetX: 9,  targetY: 11 },
+      { tileX: 33, tileY: 10, targetMap: 'ruins',    targetX: 9,  targetY: 11 },
+      { tileX: 19, tileY: 22, targetMap: 'lava_cave',targetX: 9,  targetY: 11 },
     ],
   },
   {
@@ -219,6 +338,8 @@ export const MAP_DEFS: MapDef[] = [
       { id: 'npc_elda', name: 'エルダ', dialogue: ['光の加護がありますように。'], tileX: 7, tileY: 10, spriteColor: 0xFFFFAA, recruitId: 'elda' },
       { id: 'church', name: '神父', dialogue: ['神の祝福を。'], tileX: 17, tileY: 3, spriteColor: 0xFFFFFF, isChurch: true },
       { id: 'medal_master', name: 'メダル親父', dialogue: ['ちいさなメダルを集めておるか？', '10枚で聖水、20枚でエリクサーと交換してやろう。'], tileX: 1, tileY: 6, spriteColor: 0xAAAA44 },
+      { id: 'ship_merchant', name: '⛵ 船商人', dialogue: ['船を販売しています。', '5000ゴールドで購入できますよ。'], tileX: 1, tileY: 8, spriteColor: 0x44AAFF },
+      { id: 'dock_captain', name: '⚓ 港の船頭', dialogue: ['船があれば海を渡れますよ。', '船をお持ちでない場合は船商人から購入してください。'], tileX: 18, tileY: 12, spriteColor: 0x2288FF },
     ],
     exits: [
       { tileX: 9,  tileY: 14, targetMap: 'world', targetX: 2, targetY: 3 },
@@ -348,6 +469,100 @@ export const MAP_DEFS: MapDef[] = [
     exits: [
       { tileX: 9,  tileY: 13, targetMap: 'dungeon2', targetX: 9,  targetY: 12 },
       { tileX: 10, tileY: 13, targetMap: 'dungeon2', targetX: 10, targetY: 12 },
+    ],
+  },
+  {
+    id: 'ruins',
+    name: '古代遺跡 1F',
+    tiles: RUINS_TILES,
+    bgColor: 0x221810,
+    encounterGroup: 'ruins',
+    npcs: [
+      { id: 'ruins_sage', name: '石碑の文字', dialogue: ['ここは太古の文明が残した遺跡だ。', '奥の階段を進めばさらに深い場所へ行ける。', '石古の守護者が眠りについているという…'], tileX: 3, tileY: 10, spriteColor: 0xAABBCC },
+      { id: 'chest_ruins', name: '宝箱', dialogue: [], tileX: 15, tileY: 5, spriteColor: 0xFFD700, isChest: true, chestPool: ['potion', 'mana_herb', 'chain_mail', 'iron_helm', 'gacha_ticket'] },
+    ],
+    exits: [
+      { tileX: 9,  tileY: 1,  targetMap: 'ice_cave', targetX: 9,  targetY: 2  },
+      { tileX: 10, tileY: 1,  targetMap: 'ice_cave', targetX: 10, targetY: 2  },
+      { tileX: 9,  tileY: 14, targetMap: 'world',    targetX: 33, targetY: 10 },
+      { tileX: 10, tileY: 14, targetMap: 'world',    targetX: 33, targetY: 10 },
+    ],
+  },
+  {
+    id: 'ice_cave',
+    name: '古代遺跡 深部',
+    tiles: ICE_CAVE_TILES,
+    bgColor: 0x0a1020,
+    encounterGroup: 'ice_cave',
+    npcs: [
+      { id: 'ice_boss_npc', name: '氷竜バルノース', dialogue: ['…巨大な竜がこちらを睨みつけている！', '氷の吐息が空気を凍らせる！', '戦うしかない！'], tileX: 9, tileY: 1, spriteColor: 0x88AAFF, bossId: 'ice_boss' },
+      { id: 'chest_ice', name: '宝箱', dialogue: [], tileX: 15, tileY: 5, spriteColor: 0xFFD700, isChest: true, chestPool: ['elixir', 'ether', 'crystal_staff', 'silver_ring', 'gacha_ticket'] },
+    ],
+    exits: [
+      { tileX: 9,  tileY: 13, targetMap: 'ruins', targetX: 9,  targetY: 3  },
+      { tileX: 10, tileY: 13, targetMap: 'ruins', targetX: 10, targetY: 3  },
+    ],
+  },
+  {
+    id: 'lava_cave',
+    name: '溶岩洞窟 1F',
+    tiles: LAVA_CAVE_TILES,
+    bgColor: 0x1a0800,
+    encounterGroup: 'lava_cave',
+    npcs: [
+      { id: 'lava_guide', name: '岩に刻まれた文字', dialogue: ['溶岩の底に天への道がある。', '炎の試練を越えし者のみが天空の城に至れる。'], tileX: 3, tileY: 10, spriteColor: 0xFF8844 },
+      { id: 'chest_lava', name: '宝箱', dialogue: [], tileX: 15, tileY: 5, spriteColor: 0xFFD700, isChest: true, chestPool: ['potion', 'elixir', 'plate_mail', 'silver_sword', 'gacha_ticket'] },
+    ],
+    exits: [
+      { tileX: 9,  tileY: 1,  targetMap: 'sky_castle', targetX: 9,  targetY: 2  },
+      { tileX: 10, tileY: 1,  targetMap: 'sky_castle', targetX: 10, targetY: 2  },
+      { tileX: 9,  tileY: 14, targetMap: 'world',      targetX: 19, targetY: 22 },
+      { tileX: 10, tileY: 14, targetMap: 'world',      targetX: 19, targetY: 22 },
+    ],
+  },
+  {
+    id: 'sky_castle',
+    name: '天空の試練場',
+    tiles: SKY_CASTLE_TILES,
+    bgColor: 0x101830,
+    encounterGroup: 'sky_castle',
+    npcs: [
+      { id: 'sky_boss_npc', name: '堕天使ラフィエル', dialogue: ['侵入者か…', '天空の聖域を踏み荒らす者には永遠の闇を与えよう。', '覚悟するがいい！'], tileX: 9, tileY: 1, spriteColor: 0xFFAA44, bossId: 'sky_boss' },
+      { id: 'chest_sky', name: '宝箱', dialogue: [], tileX: 15, tileY: 5, spriteColor: 0xFFD700, isChest: true, chestPool: ['elixir', 'ether', 'gacha_ticket', 'gacha_ticket'] },
+    ],
+    exits: [
+      { tileX: 9,  tileY: 13, targetMap: 'lava_cave', targetX: 9,  targetY: 3  },
+      { tileX: 10, tileY: 13, targetMap: 'lava_cave', targetX: 10, targetY: 3  },
+    ],
+  },
+  {
+    id: 'sea_temple',
+    name: '海底神殿 1F',
+    tiles: SEA_TEMPLE_TILES,
+    bgColor: 0x001530,
+    encounterGroup: 'sea_temple',
+    npcs: [
+      { id: 'sea_sage', name: '深海の霊', dialogue: ['遠路はるばる来たものじゃ。', 'この神殿の奥に魔王の城への道が続いている。', '覚悟を決めて進め。'], tileX: 3, tileY: 10, spriteColor: 0x44CCFF },
+      { id: 'chest_sea', name: '宝箱', dialogue: [], tileX: 15, tileY: 5, spriteColor: 0xFFD700, isChest: true, chestPool: ['elixir', 'ether', 'crystal_staff', 'gacha_ticket', 'gacha_ticket'] },
+    ],
+    exits: [
+      { tileX: 9,  tileY: 1,  targetMap: 'demon_castle', targetX: 9,  targetY: 2  },
+      { tileX: 10, tileY: 1,  targetMap: 'demon_castle', targetX: 10, targetY: 2  },
+    ],
+  },
+  {
+    id: 'demon_castle',
+    name: '魔王の城',
+    tiles: DEMON_CASTLE_TILES,
+    bgColor: 0x080008,
+    encounterGroup: 'demon_castle',
+    npcs: [
+      { id: 'demon_boss_npc', name: '魔王グロスールⅡ', dialogue: ['ははは、こんな所まで来るとは…', '我はすでに蘇っている！', '今度こそお前たちを消し去ってやる！'], tileX: 9, tileY: 1, spriteColor: 0xFF0000, bossId: 'demon_boss' },
+      { id: 'chest_demon', name: '宝箱', dialogue: [], tileX: 15, tileY: 5, spriteColor: 0xFFD700, isChest: true, chestPool: ['elixir', 'elixir', 'ether', 'gacha_ticket', 'gacha_ticket'] },
+    ],
+    exits: [
+      { tileX: 9,  tileY: 13, targetMap: 'sea_temple', targetX: 9,  targetY: 3  },
+      { tileX: 10, tileY: 13, targetMap: 'sea_temple', targetX: 10, targetY: 3  },
     ],
   },
 ];
