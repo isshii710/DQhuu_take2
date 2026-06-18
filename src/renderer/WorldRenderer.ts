@@ -229,6 +229,7 @@ export class WorldRenderer {
   private fieldEnemySprites = new Map<string, BillboardSprite>();
   private skyDome: THREE.Mesh | null = null;
   private buildingLights: THREE.PointLight[] = [];
+  private chestGroups = new Map<string, { lid: THREE.Mesh; opened: boolean }>();
 
   private targetCamX = 0;
   private targetCamZ = 0;
@@ -415,6 +416,7 @@ export class WorldRenderer {
     this.mapGroup.clear();
     this.npcSprites.forEach(s => s?.removeFrom(this.scene));
     this.npcSprites.clear();
+    this.chestGroups.clear();
     this.clearFieldEnemies();
 
     // Remove previous building lights
@@ -541,6 +543,7 @@ export class WorldRenderer {
       const band = new THREE.Mesh(new THREE.BoxGeometry(0.57, 0.06, 0.44), mat(0xFFD700));
       band.position.y = 0.26;
       g.add(body, lid, band);
+      this.chestGroups.set(npc.id, { lid, opened: false });
       g.position.set(npc.tileX + 0.5, 0, npc.tileY + 0.5);
       this.mapGroup.add(g);
       this.npcSprites.set(npc.id, null as unknown as BillboardSprite);
@@ -624,6 +627,20 @@ export class WorldRenderer {
     this.otherPlayerSprites.delete(id);
   }
 
+  openChest(npcId: string) {
+    const chest = this.chestGroups.get(npcId);
+    if (!chest || chest.opened) return;
+    chest.opened = true;
+    const startTime = Date.now();
+    const duration = 500;
+    const animate = () => {
+      const t = Math.min(1, (Date.now() - startTime) / duration);
+      chest.lid.rotation.x = -Math.PI * 0.7 * t;
+      if (t < 1) requestAnimationFrame(animate);
+    };
+    requestAnimationFrame(animate);
+  }
+
   // ─── Update / render ──────────────────────────────────────────────────────
 
   update(delta: number) {
@@ -649,6 +666,12 @@ export class WorldRenderer {
     this.exitMaterials.forEach(m => { m.opacity = pulse; });
     this.exitMarkers.children.forEach((c, i) => {
       (c as THREE.Mesh).rotation.z += delta * 0.0012 * (i % 2 === 0 ? 1 : -1);
+    });
+
+    // NPC sprite idle bob
+    const npcBob = Math.sin(Date.now() * 0.0018) * 0.04;
+    this.npcSprites.forEach(sp => {
+      if (sp) sp.sprite.position.y = SPRITE_Y + npcBob;
     });
   }
 

@@ -1,6 +1,8 @@
 import type { CharacterSave, EnemyDef } from '../types';
 import { COLORS } from '../config';
 import { getClassDef } from '../data/characters';
+import { QUESTS } from '../data/quests';
+import { checkQuestCompletion } from '../systems/QuestSystem';
 import {
   buildCombatant, buildEnemyCombatant, buildPartyMemberCombatant, resolveAction,
   enemyAI, applyExpGain, applyTurnStartEffects, isAllDefeated, type Combatant,
@@ -803,6 +805,18 @@ export class BattleScreen {
     living.forEach(enemy => {
       this.delay(d, () => {
         const action = enemyAI(enemy, alliedTargets);
+        // Handle enemy flee (metal series)
+        if (action.type === 'run') {
+          this.log(`${enemy.name}は逃げ出した！`);
+          (enemy as any).fled = true;
+          enemy.hp = 0;
+          const idx = this.enemyCs.indexOf(enemy);
+          if (idx >= 0 && this.enemyPanels[idx]) {
+            this.enemyPanels[idx].hpLabel.textContent = '逃げた';
+            this.enemyPanels[idx].wrap.style.opacity = '0.4';
+          }
+          return;
+        }
         const target = alliedTargets.find(t => t.id === action.targetId) ?? this.playerC;
         const result = resolveAction(enemy, action, target);
         this.log(result.text);
@@ -903,19 +917,34 @@ export class BattleScreen {
 
   private doVictory() {
     this.phase = 'victory';
-    const totalExp  = this.enemies.reduce((s,e) => s+e.exp,  0);
-    const totalGold = this.enemies.reduce((s,e) => s+e.gold, 0);
+    // Only count non-fled enemies for exp/gold/quests
+    const totalExp  = this.enemies.reduce((s, e, i) => s + ((this.enemyCs[i] as any)?.fled ? 0 : e.exp),  0);
+    const totalGold = this.enemies.reduce((s, e, i) => s + ((this.enemyCs[i] as any)?.fled ? 0 : e.gold), 0);
     const levelResult = applyExpGain(this.save, totalExp);
     const partyLevelUps = givePartyExp(this.save, totalExp);
     this.save.stats.hp = this.playerC.hp;
     this.save.stats.mp = this.playerC.mp;
     this.save.gold += totalGold;
+
+    // Track quest kills (non-fled enemies only)
+    if (!this.save.questKills) this.save.questKills = {};
+    for (let i = 0; i < this.enemies.length; i++) {
+      if (!(this.enemyCs[i] as any)?.fled) {
+        const eid = this.enemies[i].id;
+        this.save.questKills[eid] = (this.save.questKills[eid] ?? 0) + 1;
+      }
+    }
+    const completedQuests = checkQuestCompletion(this.save);
     writeSave(this.save);
 
     let msg = `★ 勝利！ ★\n\n${totalExp} EXP 獲得！\n${totalGold} G 獲得！`;
     if (levelResult.leveled) msg += `\n\n${this.save.name} レベルアップ！ Lv.${levelResult.newLevel}`;
     for (const lu of partyLevelUps) {
       msg += `\n${lu.name} レベルアップ！ Lv.${lu.newLevel}`;
+    }
+    for (const qid of completedQuests) {
+      const q = QUESTS.find(q => q.id === qid);
+      if (q) msg += `\n\n✨ クエスト達成：${q.name}！`;
     }
     this.showModal(msg, '#FFD700');
     this.delay(2800, () => this.finish(true, false));

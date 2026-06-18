@@ -1,6 +1,9 @@
-export type ClassName = '戦士' | '魔法使い' | '回復師' | '盗賊';
+export type ClassName = '戦士' | '魔法使い' | '回復師' | '盗賊'
+  | '勇者' | '賢者' | '魔剣士' | '武闘家';
 export type Direction = 'down' | 'up' | 'left' | 'right' | 'up-left' | 'up-right' | 'down-left' | 'down-right';
-export type MapId = 'world' | 'village' | 'castle' | 'dungeon' | 'dungeon2' | 'dungeon3';
+export type MapId = 'world' | 'village' | 'castle' | 'dungeon' | 'dungeon2' | 'dungeon3' | 'house1' | 'house2' | 'house3'
+  | 'ruins' | 'ice_cave' | 'lava_cave' | 'sea_temple' | 'sky_castle' | 'demon_castle'
+  | 'tmap_1' | 'tmap_2' | 'tmap_3' | 'tmap_4' | 'tmap_5';
 
 export interface Stats {
   hp: number;
@@ -45,6 +48,11 @@ export interface InventoryEntry {
   qty: number;
 }
 
+export interface BossProgress {
+  count: number;  // kills + gacha pulls of same map
+  level: number;  // current boss level
+}
+
 export interface CharacterSave {
   name: string;
   className: ClassName;
@@ -60,6 +68,11 @@ export interface CharacterSave {
   activeMemberIds: string[];
   monsterBook?: Record<string, { seen: number; defeated: number }>;
   medals?: number;
+  bossProgress?: Record<string, BossProgress>; // bossId → progress
+  jobMastery?: Record<string, number>;          // className → mastery bonus level
+  ownedMaps?: string[];                         // treasure map IDs the player owns
+  completedQuests?: string[];
+  questKills?: Record<string, number>;
 }
 
 export interface EnemyDef {
@@ -74,6 +87,8 @@ export interface EnemyDef {
   gold: number;
   drops: string[];
   sprite: string;
+  evasion?: number;
+  fleeChance?: number;
 }
 
 export interface ClassDef {
@@ -83,6 +98,7 @@ export interface ClassDef {
   growthPerLevel: { hp: number; mp: number; atk: number; def: number; mag: number; spd: number };
   skills: { level: number; name: string; mpCost: number; desc: string; magMult: number; targetType?: 'enemy' | 'ally' | 'all_allies' | 'all_enemies' | 'self' }[];
   spriteBase: number;
+  unlockFlag?: string;
 }
 
 // Multiplayer
@@ -147,6 +163,20 @@ export interface NpcDef {
   isChest?: boolean;
   chestPool?: string[];
   isChurch?: boolean;
+  bossId?: string;       // triggers a fixed boss battle when talked to
+  requireFlag?: string;  // only visible/interactable if save.flags[requireFlag]
+  setFlag?: string;      // sets this flag after interaction
+}
+
+export interface QuestDef {
+  id: string;
+  name: string;
+  desc: string;
+  killTarget?: string;   // 'any' or specific enemy id
+  killCount?: number;
+  rewardGold?: number;
+  rewardItems?: string[];
+  rewardFlag?: string;   // save flag set on completion
 }
 
 export interface MapDef {

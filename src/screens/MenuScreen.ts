@@ -5,8 +5,9 @@ import { ENEMIES } from '../data/enemies';
 import { effectiveStats, equipItem, unequipSlot } from '../systems/InventorySystem';
 import { writeSave } from '../systems/SaveSystem';
 import { setActive, setBench, MAX_ACTIVE_COMPANIONS } from '../systems/PartySystem';
+import { QUESTS } from '../data/quests';
 
-type Tab = 'status'|'equipment'|'items'|'party'|'field'|'book';
+type Tab = 'status'|'equipment'|'items'|'party'|'field'|'book'|'quests';
 
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
 
@@ -69,7 +70,7 @@ export class MenuScreen {
     // Tabs
     const tabBar = document.createElement('div');
     tabBar.style.cssText='display:flex;gap:4px;padding:8px 12px 0;';
-    const tabs: {id:Tab;label:string}[] = [{id:'status',label:'ステータス'},{id:'equipment',label:'装備'},{id:'items',label:'アイテム'},{id:'party',label:'パーティ'},{id:'field',label:'フィールド'},{id:'book',label:'図鑑'}];
+    const tabs: {id:Tab;label:string}[] = [{id:'status',label:'ステータス'},{id:'equipment',label:'装備'},{id:'items',label:'アイテム'},{id:'party',label:'パーティ'},{id:'quests',label:'クエスト'},{id:'field',label:'フィールド'},{id:'book',label:'図鑑'}];
     tabs.forEach(t => {
       const b = document.createElement('button');
       const active = t.id===this.tab;
@@ -102,6 +103,7 @@ export class MenuScreen {
     else if (this.tab==='equipment') this.buildEquipment();
     else if (this.tab==='items') this.buildItems();
     else if (this.tab==='party') this.buildParty();
+    else if (this.tab==='quests') this.buildQuests();
     else if (this.tab==='field') this.buildField();
     else this.buildBook();
   }
@@ -354,6 +356,48 @@ export class MenuScreen {
         row.innerHTML = `<div style="color:#444466;font-size:13px;font-family:${FONT};">？？？？</div>`;
       }
       this.content.appendChild(row);
+    });
+  }
+
+  private buildQuests() {
+    const completed = this.save.completedQuests ?? [];
+    const kills = this.save.questKills ?? {};
+
+    const header = document.createElement('div');
+    header.style.cssText = `color:#AAAACC;font-size:11px;margin-bottom:8px;font-family:${FONT};`;
+    header.textContent = `達成: ${completed.length}/${QUESTS.length} クエスト`;
+    this.content.appendChild(header);
+
+    QUESTS.forEach(quest => {
+      const isDone = completed.includes(quest.id);
+      const card = document.createElement('div');
+      card.style.cssText = `padding:10px;border-radius:6px;margin-bottom:6px;
+        background:${isDone ? 'rgba(40,80,40,0.3)' : 'rgba(255,255,255,0.04)'};
+        border:1px solid ${isDone ? 'rgba(68,200,68,0.4)' : 'rgba(60,60,80,0.3)'};`;
+
+      let progress = '';
+      if (quest.killTarget && quest.killTarget !== 'any' && quest.killCount) {
+        const cur = kills[quest.killTarget] ?? 0;
+        progress = `${Math.min(cur, quest.killCount)}/${quest.killCount}`;
+      } else if (quest.killTarget === 'any' && quest.killCount) {
+        const total = Object.values(kills).reduce((s, n) => s + n, 0);
+        progress = `${Math.min(total, quest.killCount)}/${quest.killCount}`;
+      }
+
+      let reward = '';
+      if (quest.rewardGold) reward += `${quest.rewardGold} G `;
+      if (quest.rewardItems?.length) reward += `アイテム×${quest.rewardItems.length} `;
+      if (quest.rewardFlag) reward += '上級職解放';
+
+      card.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <div style="color:${isDone ? '#44FF88' : '#FFFDE7'};font-size:13px;font-family:${FONT};">${isDone ? '✓ ' : ''}${quest.name}</div>
+          ${progress ? `<div style="color:#AAAACC;font-size:11px;font-family:monospace;">${progress}</div>` : ''}
+        </div>
+        <div style="color:#888899;font-size:11px;font-family:${FONT};margin-bottom:2px;">${quest.desc}</div>
+        ${reward ? `<div style="color:#FFD700;font-size:10px;font-family:${FONT};">報酬: ${reward}</div>` : ''}
+      `;
+      this.content.appendChild(card);
     });
   }
 

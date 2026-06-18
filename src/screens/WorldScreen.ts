@@ -1194,6 +1194,7 @@ export class WorldScreen {
     this.save.flags[flagKey] = true;
     writeSave(this.save);
     this.hudEl.update(this.save, getMapDef(this.mapId).name);
+    this.renderer.openChest(npc.id);
     this.showDialogue('✨ 宝箱', [`${item.name}を手に入れた！`]);
   }
 
