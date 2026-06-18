@@ -5,7 +5,7 @@ import {
   buildCombatant, buildEnemyCombatant, buildPartyMemberCombatant, resolveAction,
   enemyAI, applyExpGain, applyTurnStartEffects, isAllDefeated, type Combatant,
 } from '../systems/BattleSystem';
-import { effectiveStats } from '../systems/InventorySystem';
+import { effectiveStats, memberEffectiveStats } from '../systems/InventorySystem';
 import { writeSave } from '../systems/SaveSystem';
 import { mpManager } from '../systems/MultiplayerManager';
 import { getEnemyCanvas, getHeroCanvas } from '../engine/TextureCache';
@@ -96,7 +96,10 @@ export class BattleScreen {
     const stats = effectiveStats(save);
     this.playerC = buildCombatant({ ...save, stats: { ...save.stats, ...stats } });
     this.enemyCs = enemies.map((e, i) => buildEnemyCombatant(e, i));
-    this.companionCs = getActiveCompanions(save).map((m, i) => buildPartyMemberCombatant(m, i));
+    this.companionCs = getActiveCompanions(save).map((m, i) => {
+      const eff = memberEffectiveStats(m);
+      return buildPartyMemberCombatant({ ...m, stats: { ...m.stats, ...eff } }, i);
+    });
     this.selectedEnemy = this.enemyCs.findIndex(e => e.hp > 0);
 
     this.buildUI();

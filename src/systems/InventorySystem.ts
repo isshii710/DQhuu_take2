@@ -1,4 +1,4 @@
-import type { CharacterSave, Equipment, InventoryEntry, ItemDef } from '../types';
+import type { CharacterSave, Equipment, InventoryEntry, ItemDef, PartyMember } from '../types';
 import { getItem } from '../data/items';
 
 export function addItem(save: CharacterSave, itemId: string, qty = 1): void {
@@ -85,4 +85,53 @@ export function effectiveStats(save: CharacterSave) {
     mag:   save.stats.mag + b.mag,
     spd:   save.stats.spd + b.spd,
   };
+}
+
+export function memberTotalEquipBonus(equipment: Equipment): { atk: number; def: number; mag: number; spd: number; mhp: number; mmp: number } {
+  const bonus = { atk: 0, def: 0, mag: 0, spd: 0, mhp: 0, mmp: 0 };
+  for (const itemId of Object.values(equipment)) {
+    if (!itemId) continue;
+    const item = getItem(itemId);
+    if (!item) continue;
+    bonus.atk += item.atk ?? 0;
+    bonus.def += item.def ?? 0;
+    bonus.mag += item.mag ?? 0;
+    bonus.spd += item.spd ?? 0;
+    bonus.mhp += item.mhp ?? 0;
+    bonus.mmp += item.mmp ?? 0;
+  }
+  return bonus;
+}
+
+export function memberEffectiveStats(member: PartyMember) {
+  const b = memberTotalEquipBonus(member.equipment);
+  return {
+    hp:    member.stats.hp,
+    maxHp: member.stats.maxHp + b.mhp,
+    mp:    member.stats.mp,
+    maxMp: member.stats.maxMp + b.mmp,
+    atk:   member.stats.atk + b.atk,
+    def:   member.stats.def + b.def,
+    mag:   member.stats.mag + b.mag,
+    spd:   member.stats.spd + b.spd,
+  };
+}
+
+export function memberEquipItem(save: CharacterSave, member: PartyMember, itemId: string): string | null {
+  const item = getItem(itemId);
+  if (!item) return '不明なアイテムです';
+  if (item.type === 'consumable') return 'このアイテムは装備できません';
+  const slot = item.type as keyof Equipment;
+  const prev = member.equipment[slot];
+  if (prev) addItem(save, prev);
+  member.equipment[slot] = itemId;
+  removeItem(save, itemId);
+  return null;
+}
+
+export function memberUnequipSlot(save: CharacterSave, member: PartyMember, slot: keyof Equipment): void {
+  const itemId = member.equipment[slot];
+  if (!itemId) return;
+  addItem(save, itemId);
+  member.equipment[slot] = null;
 }

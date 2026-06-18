@@ -1,12 +1,13 @@
-import type { CharacterSave } from '../types';
+import type { CharacterSave, PartyMember } from '../types';
 import type { Equipment } from '../types';
 import { ITEMS } from '../data/items';
 import { ENEMIES } from '../data/enemies';
-import { effectiveStats, equipItem, unequipSlot } from '../systems/InventorySystem';
+import { effectiveStats, equipItem, unequipSlot, memberEquipItem, memberUnequipSlot } from '../systems/InventorySystem';
 import { writeSave } from '../systems/SaveSystem';
 import { setActive, setBench, MAX_ACTIVE_COMPANIONS } from '../systems/PartySystem';
 
 type Tab = 'status'|'equipment'|'items'|'party'|'field'|'book';
+type EquipTarget = 'hero' | string; // 'hero' or member.id
 
 const FONT = '"Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif';
 
@@ -14,6 +15,7 @@ export class MenuScreen {
   private root: HTMLElement;
   private content!: HTMLElement;
   private tab: Tab = 'status';
+  private equipTarget: EquipTarget = 'hero';
   private save!: CharacterSave;
   private onClose!: (save: CharacterSave) => void;
   private onFieldAction?: (action: string) => void;
@@ -128,12 +130,64 @@ export class MenuScreen {
   }
 
   private buildEquipment() {
+    // ─── Character selector ───────────────────────────────────────────────────
+    const allChars: { id: EquipTarget; name: string }[] = [
+      { id: 'hero', name: this.save.name },
+      ...this.save.party.map(m => ({ id: m.id, name: m.name })),
+    ];
+
+    // Validate equipTarget still exists (party member may have been removed)
+    if (this.equipTarget !== 'hero' && !this.save.party.find(m => m.id === this.equipTarget)) {
+      this.equipTarget = 'hero';
+    }
+
+    const selectorRow = document.createElement('div');
+    selectorRow.style.cssText = 'display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;';
+    allChars.forEach(({ id, name }) => {
+      const b = document.createElement('button');
+      const active = id === this.equipTarget;
+      b.textContent = name;
+      b.style.cssText = `
+        padding:5px 10px;font-size:11px;font-family:${FONT};cursor:pointer;pointer-events:auto;
+        background:${active ? 'rgba(51,68,136,0.9)' : 'rgba(16,16,30,0.9)'};
+        color:${active ? '#FFD700' : '#AAAACC'};
+        border:1px solid ${active ? 'rgba(212,175,55,0.6)' : 'rgba(51,68,102,0.5)'};
+        border-radius:3px;white-space:nowrap;
+      `;
+      b.addEventListener('click', () => { this.equipTarget = id; this.render(); });
+      selectorRow.appendChild(b);
+    });
+    this.content.appendChild(selectorRow);
+
+    // ─── Determine current equipment and equip/unequip callbacks ─────────────
+    const member: PartyMember | null =
+      this.equipTarget === 'hero' ? null
+      : this.save.party.find(m => m.id === this.equipTarget) ?? null;
+
+    const getCurrentEquip = (key: keyof Equipment): string | null =>
+      member ? member.equipment[key] : this.save.equipment[key];
+
+    const doUnequip = (key: keyof Equipment) => {
+      if (member) memberUnequipSlot(this.save, member, key);
+      else unequipSlot(this.save, key);
+      writeSave(this.save);
+      this.render();
+    };
+
+    const doEquip = (itemId: string) => {
+      if (member) memberEquipItem(this.save, member, itemId);
+      else equipItem(this.save, itemId);
+      writeSave(this.save);
+      this.render();
+    };
+
+    // ─── Equipment slots ──────────────────────────────────────────────────────
     const slots: {key:keyof Equipment;label:string}[] = [
       {key:'weapon',label:'武器'},{key:'armor',label:'防具'},
       {key:'helmet',label:'兜'},{key:'accessory',label:'アクセ'},
     ];
     slots.forEach(({key,label})=>{
-      const equippedId = this.save.equipment[key];
+      const equippedId = getCurrentEquip(key);
       const item = equippedId ? ITEMS.find(i=>i.id===equippedId) : null;
       const row = document.createElement('div');
       row.style.cssText='display:flex;align-items:center;padding:8px 6px;background:rgba(255,255,255,0.04);border-radius:4px;margin-bottom:6px;';
@@ -149,12 +203,13 @@ export class MenuScreen {
         const unBtn=document.createElement('button');
         unBtn.textContent='外す';
         unBtn.style.cssText='background:none;border:1px solid rgba(255,100,100,0.5);color:#FF8888;font-size:11px;padding:3px 8px;border-radius:3px;cursor:pointer;pointer-events:auto;font-family:'+FONT+';';
-        unBtn.addEventListener('click',()=>{unequipSlot(this.save,key);writeSave(this.save);this.render();});
+        unBtn.addEventListener('click', () => doUnequip(key));
         row.appendChild(unBtn);
       }
       this.content.appendChild(row);
     });
 
+    // ─── Inventory: equippable items ──────────────────────────────────────────
     const sep=document.createElement('div');
     sep.style.cssText='color:#AAAACC;font-size:11px;text-align:center;margin:10px 0 6px;';
     sep.textContent='─── 所持品から装備 ───';
@@ -170,12 +225,17 @@ export class MenuScreen {
       empty.textContent='装備できるアイテムがない';
       this.content.appendChild(empty);
     } else {
-      equippables.slice(0,6).forEach(entry=>{
+      equippables.forEach(entry=>{
         const item=ITEMS.find(i=>i.id===entry.itemId)!;
         const row=document.createElement('div');
         row.style.cssText='display:flex;align-items:center;padding:7px 6px;background:rgba(255,255,255,0.04);border-radius:4px;margin-bottom:4px;cursor:pointer;pointer-events:auto;';
-        row.innerHTML=`<div style="color:#FFFDE7;font-size:13px;flex:1;font-family:${FONT};">${item.name}</div>`;
-        row.addEventListener('click',()=>{equipItem(this.save,entry.itemId);writeSave(this.save);this.render();});
+        const typeLabel = item.type === 'weapon' ? '武' : item.type === 'armor' ? '防' : item.type === 'helmet' ? '兜' : 'アク';
+        row.innerHTML=`
+          <div style="color:#888899;font-size:10px;min-width:22px;font-family:${FONT};">[${typeLabel}]</div>
+          <div style="color:#FFFDE7;font-size:13px;flex:1;font-family:${FONT};">${item.name}</div>
+          <div style="color:#AAAACC;font-size:10px;font-family:monospace;">×${entry.qty}</div>
+        `;
+        row.addEventListener('click', () => doEquip(entry.itemId));
         this.content.appendChild(row);
       });
     }
