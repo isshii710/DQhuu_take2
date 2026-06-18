@@ -44,6 +44,7 @@ export class BattleScreen {
   private companionPanels: { hpFill: HTMLElement; hpLabel: HTMLElement }[] = [];
   private selectedEnemy = 0;
   private targetRings: HTMLElement[] = [];
+  private companionMarkers: HTMLElement[] = [];
   private playerMarker!: HTMLElement;
 
   private onEnd!: (save: CharacterSave, mapId: string) => void;
@@ -196,6 +197,7 @@ export class BattleScreen {
     `);
 
     // Companion sprites (left of hero, smaller)
+    this.companionMarkers = [];
     for (const comp of this.companionCs) {
       const memberId = comp.id.replace('party_', '');
       const member = this.save.party.find(p => p.id === memberId);
@@ -206,6 +208,7 @@ export class BattleScreen {
       const cc2 = compCvs.getContext('2d')!;
       cc2.drawImage(getHeroCanvas(compCi), 6*32, 0, 32, 32, 0, 0, 32, 32);
       this.playerMarker.appendChild(compCvs);
+      this.companionMarkers.push(compCvs);
     }
 
     // Hero sprite (main, facing enemies = frame 6 = up-facing)
@@ -546,7 +549,6 @@ export class BattleScreen {
     this.commandEl.innerHTML = '';
 
     if (this.isMultiplayer) {
-      // Hero-only multiplayer path unchanged
       const heroAction = this.pendingActions.find(a => a.actor.id === this.playerC.id);
       if (heroAction) {
         mpManager.submitAction({
@@ -560,18 +562,27 @@ export class BattleScreen {
       return;
     }
 
-    let d = 0;
+    // Sequential: each action starts AFTER the previous one's animation finishes
+    let chain = Promise.resolve();
     this.pendingActions.forEach(action => {
-      this.delay(d, () => this.executeSingleAction(action));
-      d += 900;
+      chain = chain.then(() => this.executeAndWait(action));
     });
 
-    this.delay(d, () => {
-      if (this.enemyCs.every(e => e.hp <= 0)) {
-        this.doVictory();
-      } else {
-        this.doEnemyTurns();
-      }
+    chain.then(() => {
+      this.delay(300, () => {
+        if (this.enemyCs.every(e => e.hp <= 0)) this.doVictory();
+        else this.doEnemyTurns();
+      });
+    });
+  }
+
+  private executeAndWait(action: { actor: Combatant; type: 'attack'|'magic'|'item'|'run'; spellName?: string; itemId?: string; targetIndex: number; allyTargetId?: string }): Promise<void> {
+    return new Promise(resolve => {
+      this.delay(80, () => {
+        this.executeSingleAction(action);
+        const waitTime = action.type === 'run' ? 350 : 800;
+        this.delay(waitTime, resolve);
+      });
     });
   }
 
@@ -720,14 +731,46 @@ export class BattleScreen {
 
     if ((action.type === 'attack' || action.type === 'magic') && target && target.hp > 0) {
       if (isHero) {
-        this.animateStepIn(targetIdx, action.type === 'magic').then(doResolve);
+        this.animateStepIn(targetIdx, action.type === 'magic', action.spellName).then(doResolve);
       } else {
+        // Companion step-up animation before attack
+        const compIdx = this.companionCs.indexOf(action.actor);
+        const marker = this.companionMarkers[compIdx];
         const panel = this.enemyPanels[targetIdx];
-        if (panel) {
-          panel.wrap.style.filter = 'brightness(2.5) saturate(0)';
-          setTimeout(() => { panel.wrap.style.filter = ''; }, 180);
+        if (marker) {
+          (marker as HTMLElement).style.transition = 'transform 0.14s ease-in';
+          (marker as HTMLElement).style.transform = 'translateY(-10px) scale(1.12)';
+          setTimeout(() => {
+            if (panel) {
+              panel.wrap.style.filter = 'brightness(2.5) saturate(0)';
+              setTimeout(() => { panel.wrap.style.filter = ''; }, 200);
+            }
+            // Simple orb for companion magic
+            if (action.type === 'magic' && panel) {
+              const rootRect = this.root.getBoundingClientRect();
+              const markerRect = (marker as HTMLElement).getBoundingClientRect();
+              const enemyRect = panel.wrap.getBoundingClientRect();
+              const info = this.spellEffectInfo(action.spellName ?? '');
+              this.shootOrb(
+                markerRect.left - rootRect.left + markerRect.width / 2,
+                markerRect.top  - rootRect.top  + markerRect.height / 2,
+                enemyRect.left  - rootRect.left + enemyRect.width  / 2,
+                enemyRect.top   - rootRect.top  + enemyRect.height / 2,
+                info.color,
+              );
+            }
+            doResolve();
+            setTimeout(() => {
+              (marker as HTMLElement).style.transform = '';
+            }, 160);
+          }, 180);
+        } else {
+          if (panel) {
+            panel.wrap.style.filter = 'brightness(2.5) saturate(0)';
+            setTimeout(() => { panel.wrap.style.filter = ''; }, 200);
+          }
+          doResolve();
         }
-        doResolve();
       }
     } else {
       doResolve();
@@ -736,13 +779,14 @@ export class BattleScreen {
 
   // ─── Step-in animation ──────────────────────────────────────────────────────
 
-  private animateStepIn(enemyIndex: number, isMagic: boolean): Promise<void> {
+  private animateStepIn(enemyIndex: number, isMagic: boolean, spellName?: string): Promise<void> {
     return new Promise(resolve => {
       const panel = this.enemyPanels[enemyIndex];
       if (!panel || !this.playerMarker) { resolve(); return; }
 
       const markerRect = this.playerMarker.getBoundingClientRect();
       const enemyRect = panel.wrap.getBoundingClientRect();
+      const rootRect = this.root.getBoundingClientRect();
 
       const markerCx = markerRect.left + markerRect.width / 2;
       const markerCy = markerRect.top + markerRect.height / 2;
@@ -766,24 +810,15 @@ export class BattleScreen {
         setTimeout(() => panel.wrap.style.transform = 'translateX(-5px)', 120);
         setTimeout(() => { panel.wrap.style.transform = 'translateX(0)'; panel.wrap.style.filter = ''; }, 200);
 
-        // For magic: shoot a projectile
+        // For magic: shoot a spell orb projectile
         if (isMagic) {
-          const orb = el('div', `
-            position:absolute;width:14px;height:14px;border-radius:50%;
-            background:#AACCFF;box-shadow:0 0 12px #88AAFF;
-            pointer-events:none;z-index:15;
-            transition:all 0.15s linear;
-          `);
-          const px = rootRect.width/2 - 7;
-          const py = rootRect.height - 130 - 26;
-          orb.style.left = px + 'px';
-          orb.style.top = py + 'px';
-          this.root.appendChild(orb);
-          requestAnimationFrame(() => {
-            orb.style.left = (enemyRect.left - rootRect.left + enemyRect.width/2 - 7) + 'px';
-            orb.style.top = (enemyRect.top - rootRect.top + enemyRect.height/2 - 7) + 'px';
-          });
-          setTimeout(() => orb.remove(), 200);
+          this.shootOrb(
+            markerCx - rootRect.left,
+            markerCy - rootRect.top,
+            enemyRect.left - rootRect.left + enemyRect.width  / 2,
+            enemyRect.top  - rootRect.top  + enemyRect.height / 2,
+            this.spellEffectInfo(spellName ?? '').color,
+          );
         }
 
         // Step back
@@ -1000,6 +1035,35 @@ export class BattleScreen {
         this.buildCommandMenu();
       }
     });
+  }
+
+  private spellEffectInfo(spellName: string): { color: string } {
+    const fire  = ['ギラ','イオ','毒針'];
+    const heal  = ['ヒール','全体ヒール','ベホマ','復活の光'];
+    const dark  = ['マヌーサ','ラリホー','煙幕','スロウ'];
+    const buff  = ['鼓舞','バリア','スカラ'];
+    if (fire.includes(spellName))  return { color: '#FF6622' };
+    if (heal.includes(spellName))  return { color: '#44FF88' };
+    if (dark.includes(spellName))  return { color: '#AA44FF' };
+    if (buff.includes(spellName))  return { color: '#FFD700' };
+    return { color: '#88CCFF' };
+  }
+
+  private shootOrb(startX: number, startY: number, endX: number, endY: number, color: string) {
+    const orb = el('div', `
+      position:absolute;width:16px;height:16px;border-radius:50%;
+      background:${color};box-shadow:0 0 14px ${color};
+      pointer-events:none;z-index:15;
+      transition:left 0.18s linear, top 0.18s linear;
+    `);
+    orb.style.left = (startX - 8) + 'px';
+    orb.style.top  = (startY - 8) + 'px';
+    this.root.appendChild(orb);
+    requestAnimationFrame(() => {
+      orb.style.left = (endX - 8) + 'px';
+      orb.style.top  = (endY - 8) + 'px';
+    });
+    setTimeout(() => orb.remove(), 280);
   }
 
   private delay(ms: number, fn: ()=>void) {
